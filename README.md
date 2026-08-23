@@ -96,7 +96,7 @@ node build-standalone.js
 
 ## 라이선스
 
-Copyright © 2026 brugl. **All rights reserved.**
+Copyright © 2026 Hyojin Kim. **All rights reserved.**
 
 소스는 **열람 목적으로만** 공개한다. 저작권자의 사전 서면 허락 없이 복제·배포·수정·상업적 이용을 할 수 없다.
 전체 조건은 [LICENSE](LICENSE) 에 있다.
