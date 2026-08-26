@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 세무사 사용 설명</title>
+<style>
+  :root {
+    --stage-bg: #141311;
+    --accent: #0068ff;
+    --bright: #f0ede6;
+    --font: 'Noto Sans KR', 'Malgun Gothic', -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--stage-bg); overflow: hidden; }
+  body { font-family: var(--font); display: flex; align-items: center; justify-content: center; height: 100vh; }
+
+  /* 무대는 1920×1080 고정. 화면이 좁으면 통째로 축소해 보여준다 —
+     이렇게 해야 웹페이지와 촬영 프레임의 좌표가 완전히 같아진다. */
+  .stage {
+    position: relative; width: 1920px; height: 1080px; flex: none;
+    background: var(--stage-bg); transform-origin: center center; overflow: hidden;
+  }
+
+  .app-frame {
+    position: absolute; left: 460px; top: 96px; width: 1000px; height: 900px;
+    border-radius: 16px; overflow: hidden; background: #faf9f5;
+    border: 1px solid rgba(255,255,255,.09);
+  }
+  .app-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+  /* 하이라이트 — 대상 밖을 덮는 네 조각. clip-path 대신 사각형 넷으로 두어
+     어느 브라우저에서나 같게 그려진다. */
+  .dim { position: absolute; background: rgba(0,0,0,.55); opacity: 0; transition: opacity .3s; }
+  .dim.on { opacity: 1; }
+  .ring {
+    position: absolute; border: 3px solid var(--accent); border-radius: 10px;
+    box-shadow: 0 0 0 6px rgba(0,104,255,.25); opacity: 0; transition: opacity .3s;
+  }
+  .ring.on { opacity: 1; }
+
+  .badge {
+    position: absolute; left: 96px; top: 96px;
+    width: 64px; height: 64px; border-radius: 50%; background: var(--accent);
+    color: #fff; font-size: 30px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .chap { position: absolute; left: 180px; top: 108px; font-size: 34px; font-weight: 600; color: var(--bright); }
+
+  /* 하단 자막 — 이 영상은 무음이므로 자막이 설명을 전부 진다. */
+  .say {
+    position: absolute; left: 50%; bottom: 74px; transform: translateX(-50%);
+    max-width: 1500px; padding: 20px 36px; border-radius: 14px;
+    background: rgba(0,0,0,.72); color: #fff;
+    font-size: 40px; font-weight: 700; letter-spacing: -.5px; line-height: 1.4;
+    text-align: center; white-space: nowrap;
+  }
+
+  /* 대상 옆 자막 — 버튼 설명용. 지시선으로 대상과 잇는다. */
+  .note {
+    position: absolute; padding: 10px 16px; border-radius: 10px;
+    background: rgba(0,0,0,.78); color: #fff; font-size: 24px; font-weight: 600;
+    white-space: nowrap; opacity: 0; transition: opacity .3s;
+  }
+  .note.on { opacity: 1; }
+  .lead { position: absolute; background: var(--accent); opacity: 0; transition: opacity .3s; }
+  .lead.on { opacity: 1; }
+
+  /* 장 전환 카드 */
+  .card {
+    position: absolute; inset: 0; background: var(--stage-bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 28px; opacity: 0; pointer-events: none;
+  }
+  .card.on { opacity: 1; }
+  .card-num { font-size: 120px; font-weight: 700; color: var(--accent); line-height: 1; }
+  .card-title { font-size: 56px; font-weight: 600; color: var(--bright); }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="app-frame"><iframe id="app" title="AI 세무사"></iframe></div>
+  <div class="dim" id="dimT"></div><div class="dim" id="dimB"></div>
+  <div class="dim" id="dimL"></div><div class="dim" id="dimR"></div>
+  <div class="ring" id="ring"></div>
+  <div class="lead" id="lead"></div>
+  <div class="note" id="note"></div>
+  <div class="badge" id="badge">1</div>
+  <div class="chap" id="chap"></div>
+  <div class="say" id="say"></div>
+  <div class="card" id="card">
+    <div class="card-num" id="cardNum">1</div>
+    <div class="card-title" id="cardTitle"></div>
+  </div>
+</div>
+
+<script src="walkthrough-beats.js"></script>
+<script>
+// 도구 주소는 여기 한 곳에만 둔다. 스테이징 폴더에서도, gh-pages 에 올린 뒤에도
+// 도구가 index.html 이므로 이 상대경로가 그대로 맞는다.
+const TOOL_URL = './index.html';
+document.getElementById('app').src = TOOL_URL;
+</script>
+</body>
+</html>

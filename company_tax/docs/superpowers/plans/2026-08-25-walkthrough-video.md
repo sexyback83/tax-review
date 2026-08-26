@@ -295,7 +295,10 @@ git update-ref refs/heads/main "$C" && git push origin main
   - `window.player.play()` / `window.player.pause()` — 웹페이지 재생용
   - `window.player.ready` — iframe 로드 완료 여부 (Puppeteer 가 기다린다)
 
-- [ ] **Step 1: 무대 골격과 스타일을 만든다**
+- [x] **Step 1: 무대 골격과 스타일을 만든다**
+
+실제 구현에서는 계획 코드에 `document.getElementById('app').src = TOOL_URL;` 한 줄을 더했다.
+계획 코드 그대로면 iframe 에 src 가 없어 Step 2 의 기대 결과(시작 화면이 보임)를 만들 수 없다.
 
 `ai project/walkthrough.html`:
 
@@ -407,7 +410,7 @@ const TOOL_URL = './index.html';
 </html>
 ```
 
-- [ ] **Step 2: 브라우저로 열어 무대가 그려지는지 확인한다**
+- [x] **Step 2: 브라우저로 열어 무대가 그려지는지 확인한다**
 
 Run: 스테이징 폴더를 만들고 브라우저로 연다.
 
@@ -421,7 +424,10 @@ cp walkthrough.html walkthrough-beats.js ../test/_stage/
 `preview_start` 로 `file:///C:/Users/brugl/OneDrive/바탕 화면/test/_stage/walkthrough.html` 을 연다.
 Expected: 근검정 배경 위에 1000×900 흰 카드가 있고 그 안에 AI 세무사 시작 화면이 보인다. 자막·배지는 아직 비어 있다.
 
-- [ ] **Step 3: 커밋**
+실제 확인(원격 환경, Windows `preview_start` 대신): 단일파일 빌드가 없어 `company_tax/tax-review/{index.html,calc.js,fp.js,assets}` 를 스테이징에 그대로 복사해 대신했다.
+`http-server` 로 서빙하고 Playwright(Chromium) 로 1920×1080 스크린샷을 찍어 확인 — 근검정 배경, 460,96 위치의 1000×900 흰 카드, 카드 안에 실제 시작 화면(세무 검토 / FP센터 카드) 이 보였다. 배지는 기본값 "1", 자막(`.say`)은 빈 채로 보이지 않음 — 기대와 일치.
+
+- [x] **Step 3: 커밋**
 
 ```bash
 cd "C:/Users/brugl/OneDrive/바탕 화면/test"
