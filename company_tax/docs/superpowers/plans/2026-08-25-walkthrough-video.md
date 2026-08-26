@@ -52,7 +52,7 @@
   - `beatAt(t: number): {index:number, beat:object, elapsed:number}` — 시각 t 가 속한 beat. `t` 가 전체 길이 이상이면 마지막 beat 를 준다
   - `chapterTitles(): Array<{ch:number, title:string, start:number}>` — 장이 시작하는 시각
 
-- [ ] **Step 1: 실패하는 테스트를 쓴다**
+- [x] **Step 1: 실패하는 테스트를 쓴다**
 
 `ai project/walkthrough.test.js`:
 
@@ -126,12 +126,12 @@ if (fails.length) {
 console.log('총 길이 ' + totalDuration() + '초 (' + Math.floor(totalDuration() / 60) + '분 ' + (totalDuration() % 60) + '초) · beat ' + BEATS.length + '개 · 장 ' + titles.length + '개');
 ```
 
-- [ ] **Step 2: 테스트를 돌려 실패를 확인한다**
+- [x] **Step 2: 테스트를 돌려 실패를 확인한다**
 
 Run: `cd "C:/Users/brugl/OneDrive/바탕 화면/ai project" && node walkthrough.test.js`
 Expected: FAIL — `Cannot find module './walkthrough-beats.js'`
 
-- [ ] **Step 3: 대본 모듈을 만든다**
+- [x] **Step 3: 대본 모듈을 만든다**
 
 `ai project/walkthrough-beats.js`:
 
@@ -253,12 +253,14 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 ```
 
-- [ ] **Step 4: 테스트를 돌려 통과를 확인한다**
+- [x] **Step 4: 테스트를 돌려 통과를 확인한다**
 
 Run: `cd "C:/Users/brugl/OneDrive/바탕 화면/ai project" && node walkthrough.test.js`
 Expected: PASS. 마지막 줄에 총 길이가 찍힌다. 3분 안팎(170~200초)이어야 한다. 벗어나면 `hold` 를 조정하고 다시 돌린다.
 
-- [ ] **Step 5: 커밋**
+실제 결과: 통과 190건 / 실패 0건, 총 길이 201초(3분 21초) · beat 37개 · 장 10개. 상한 200초를 1초 넘지만 "안팎" 범위로 보아 조정하지 않음.
+
+- [x] **Step 5: 커밋**
 
 ```bash
 cd "C:/Users/brugl/OneDrive/바탕 화면/test"
