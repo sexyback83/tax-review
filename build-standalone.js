@@ -34,6 +34,7 @@ const put = (haystack, needle, value) => {
 };
 
 html = put(html, '<script src="calc.js"></script>', '<script>\n' + read('calc.js') + '\n</script>');
+html = put(html, '<script src="succession-industry.js"></script>', '<script>\n' + read('succession-industry.js') + '\n</script>');
 html = put(html, '<script src="fp.js"></script>', '<script>\n' + read('fp.js') + '\n</script>');
 
 // 이미지는 여러 번 나올 수 있으므로 split/join 으로 전부 바꾼다.
