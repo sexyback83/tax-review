@@ -120,6 +120,12 @@ function type(sel, value) {
   el.dispatchEvent(new app.contentWindow.Event('input', { bubbles: true }));
 }
 function scrollBy(px) { app.contentWindow.scrollTo({ top: px, behavior: 'instant' }); }
+// 결과 화면 하단부는 내용에 따라 높이가 달라져 고정 픽셀로는 못 맞춘다.
+// 대상을 직접 화면 안으로 넣는다.
+function scrollToSel(sel) {
+  const el = q(sel);
+  if (el) el.scrollIntoView({ block: 'center', behavior: 'instant' });
+}
 
 // 대본의 act 이름이 여기로 온다. 대본은 순수 데이터로 두고 동작은 여기 모은다.
 const ACTIONS = {
@@ -134,9 +140,18 @@ const ACTIONS = {
   pickInherit() { click('[data-act="item"][data-v="inherit"]'); },
   typeRealEstate() { type('input[data-inp="val"][data-k="re"]', '200000'); },
   typeCash() { type('input[data-inp="val"][data-k="cash"]', '100000'); },
+  swapToDeep() { click('[data-act="swapMode"]'); },
+  typeDeathDate() { type('input[data-inp="dateval"][data-k="deathDate"]', '20240314'); },
+  typePreGift() {
+    scrollToSel('input[data-inp="val"][data-k="pregift"]');
+    type('input[data-inp="val"][data-k="pregift"]', '5000');
+  },
+  swapToSimple() { click('[data-act="swapMode"]'); },
   toResult() { click('[data-act="next"]'); scrollBy(0); },
   scrollSteps() { scrollBy(420); },
   scrollNotice() { scrollBy(900); },
+  openResultEdit() { scrollToSel('[data-act="toggleEdit"]'); click('[data-act="toggleEdit"]'); },
+  closeEditShowNext() { click('[data-act="toggleEdit"]'); scrollToSel('.next-item'); },
   toSummary() { scrollBy(0); click('[data-act="gotoSummary"]'); },
   openEdit() { click('[data-act="sumEdit"]'); },
   editRealEstate() { type('input[data-inp="val"][data-k="re"]', '300000'); },

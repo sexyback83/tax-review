@@ -54,6 +54,13 @@ const BEATS = [
   { ch: 6, say: '부동산 칸에 몰아넣으면 금융재산공제가 사라집니다',
     note: '세액이 과대 계상됨', hold: 7 },
   { ch: 6, say: '입력하는 동안 아래 안내 문구가 함께 바뀝니다', focus: '[data-hint]', hold: 6 },
+  { ch: 6, say: '심화로 바꾸면 입력 항목이 늘어납니다',
+    act: 'swapToDeep', focus: '.mode-line', hold: 6 },
+  { ch: 6, say: '상속개시일도 직접 넣을 수 있습니다', act: 'typeDeathDate',
+    focus: 'input[data-inp="dateval"][data-k="deathDate"]', hold: 6 },
+  { ch: 6, say: '사전증여재산도 심화에서만 받습니다', act: 'typePreGift',
+    focus: 'input[data-inp="val"][data-k="pregift"]', note: '심화 전용 입력', hold: 7 },
+  { ch: 6, say: '간편은 이런 값에 법정 기본값을 씁니다', act: 'swapToSimple', hold: 6 },
 
   // ── 7장 결과 ──
   { ch: 7, title: '결과', say: '세액이 가장 크게 나옵니다', act: 'toResult', hold: 5 },
@@ -61,6 +68,14 @@ const BEATS = [
   { ch: 7, say: '적용 기준 고지는 어떤 전제로 계산했는지 밝힙니다',
     act: 'scrollNotice', focus: '.notice', hold: 6 },
   { ch: 7, say: '개산이므로 확정 세액은 전문가 검토가 필요합니다', hold: 6 },
+  { ch: 7, say: '입력값 수정을 누르면 그 자리에서 고칩니다',
+    act: 'openResultEdit', focus: '[data-act="toggleEdit"]', hold: 6 },
+  { ch: 7, say: '고치면 즉시 다시 계산됩니다', focus: '.edit-panel', hold: 5 },
+  { ch: 7, say: '여기서도 간편·심화를 바꿀 수 있습니다',
+    focus: '[data-act="swapMode"]', hold: 6 },
+  { ch: 7, say: '아래에는 다른 세목 메뉴가 있습니다',
+    act: 'closeEditShowNext', focus: '.next-item', hold: 6 },
+  { ch: 7, say: '눌러 바로 다른 세목을 이어 검토합니다', focus: '.next-item', hold: 6 },
 
   // ── 8장 종합 검토 결과 ──
   { ch: 8, title: '종합 검토 결과', say: '검토한 항목을 한 화면에 모아 봅니다',
