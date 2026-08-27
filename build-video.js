@@ -64,10 +64,56 @@ async function checkScript(page) {
   console.log('모든 focus 셀렉터가 살아 있습니다');
 }
 
-// Task 4 에서 촬영·인코딩을 채운다. 그때까지 --check 외의 실행은 여기서 막는다 —
-// 없는 함수를 부르다 알 수 없는 오류로 죽는 것보다 낫다.
-async function capture() { throw new Error('촬영은 Task 4 에서 구현합니다. 지금은 --check 만 됩니다'); }
-function encode() { throw new Error('인코딩은 Task 4 에서 구현합니다'); }
+// --seconds N 을 주면 앞 N 초만 찍는다. 속도를 재거나 앞부분만 다시 볼 때 쓴다.
+function wantedSeconds(total) {
+  const i = process.argv.indexOf('--seconds');
+  if (i < 0) return total;
+  const n = Number(process.argv[i + 1]);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, total) : total;
+}
+
+async function capture(page) {
+  const { totalDuration } = require('./walkthrough-beats.js');
+  const total = wantedSeconds(totalDuration());
+  const frames = Math.ceil(total * FPS);
+
+  fs.rmSync(FRAMES, { recursive: true, force: true });
+  fs.mkdirSync(FRAMES, { recursive: true });
+
+  // 되감기가 없도록 t 를 단조 증가시킨다. player.seek 이 이를 전제로 만들어졌다.
+  await page.evaluate(() => window.player.replay(0));
+  for (let i = 0; i < frames; i++) {
+    const t = i / FPS;
+    await page.evaluate((tt) => window.player.seek(tt), t);
+    await page.screenshot({
+      path: path.join(FRAMES, String(i).padStart(5, '0') + '.jpg'),
+      type: 'jpeg', quality: 92,
+    });
+    if (i % (FPS * 10) === 0) {
+      console.log('  촬영 ' + Math.round(t) + '초 / ' + Math.round(total) + '초');
+    }
+  }
+  console.log('프레임 ' + frames + '장 촬영 완료');
+}
+
+function encode() {
+  const ffmpeg = require('ffmpeg-static');
+  fs.rmSync(OUT, { force: true });
+  execFileSync(ffmpeg, [
+    '-y',
+    '-framerate', String(FPS),
+    '-i', path.join(FRAMES, '%05d.jpg'),
+    '-c:v', 'libx264',
+    '-preset', 'slow',
+    '-crf', '20',
+    '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart',
+    OUT,
+  ], { stdio: 'inherit' });
+  fs.rmSync(FRAMES, { recursive: true, force: true });
+  const mb = (fs.statSync(OUT).size / 1024 / 1024).toFixed(1);
+  console.log('완성: ' + OUT + ' (' + mb + 'MB)');
+}
 
 async function main() {
   buildStage();

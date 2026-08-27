@@ -802,7 +802,10 @@ git update-ref refs/heads/main "$C" && git push origin main
 - Consumes: Task 3 의 `openStage(browser)`, `player.seek(t)`, `FPS`, `STAGE`, `FRAMES`, `OUT`
 - Produces: `AI세무사_사용설명.mp4` — 1920×1080, 12fps, H.264
 
-- [ ] **Step 1: 촬영과 인코딩을 쓴다**
+- [x] **Step 1: 촬영과 인코딩을 쓴다**
+
+실제 확인(원격 환경): Task 3 때와 같은 이유로 검증 중에만 `puppeteer.launch` 의 `args` 에 `--no-sandbox` 를 임시로 넣고, 커밋 전 원래 코드로 되돌렸다.
+또한 이 환경에 미리 깔린 ffmpeg(Playwright 번들)는 webm/vp8 전용으로 축소 빌드돼 있어 MP4 를 못 만든다 — `npm i ffmpeg-static` 로 받아 둔 실제 정적 바이너리(`node_modules/ffmpeg-static/install.js` 를 한 번 실행해 내려받음)가 정상적으로 libx264 를 지원해 이 코드 그대로 썼다.
 
 `build-video.js` 의 `main()` 위에 넣는다:
 
@@ -859,19 +862,23 @@ function encode() {
 }
 ```
 
-- [ ] **Step 2: 짧은 구간으로 먼저 속도를 잰다**
+- [x] **Step 2: 짧은 구간으로 먼저 속도를 잰다**
 
 전체를 돌리기 전에 앞 10초만 찍어 프레임당 소요를 확인한다.
 
 Run: `cd "C:/Users/brugl/OneDrive/바탕 화면/ai project" && node build-video.js --seconds 10`
 Expected: 120장이 찍히고 MP4 가 나온다. 프레임당 1초를 넘으면 전체 촬영이 40분을 넘으므로, `FPS` 를 8 로 낮추고 다시 잰다. 설명 영상은 대부분 정지 화면이라 8fps 로도 충분하다.
 
-- [ ] **Step 3: 전체를 촬영해 인코딩한다**
+실제 확인: 120장 촬영, 프레임당 약 0.05초 — 1초를 훨씬 밑돌아 FPS 를 낮출 필요가 없었다. (샘플 미리보기 단계에서 이미 612장/32.8초로 같은 속도를 확인한 바 있음)
+
+- [x] **Step 3: 전체를 촬영해 인코딩한다**
 
 Run: `cd "C:/Users/brugl/OneDrive/바탕 화면/ai project" && node build-video.js`
 Expected: `완성: ...AI세무사_사용설명.mp4 (NN.NMB)`
 
-- [ ] **Step 4: 결과물을 검증한다**
+실제 결과: `완성: .../AI세무사_사용설명.mp4 (2.7MB)` — 2412 프레임 촬영 후 인코딩.
+
+- [x] **Step 4: 결과물을 검증한다**
 
 ```bash
 cd "C:/Users/brugl/OneDrive/바탕 화면/ai project"
@@ -886,11 +893,16 @@ Expected: `width=1920` · `height=1080` · `duration` 이 `totalDuration()` 과 
 
 `ffmpeg-static` 에 ffprobe 가 없으면 대신 ffmpeg 으로 확인한다: `ffmpeg -i AI세무사_사용설명.mp4` 의 stderr 에 해상도와 길이가 찍힌다.
 
-- [ ] **Step 5: 눈으로 확인한다**
+실제 확인: 이 환경의 `ffmpeg-static` 에도 ffprobe 가 없어(대신 `ffprobe-static` 패키지가 별도로 딸려 있었으나 실행 파일이 아니었다) 안내대로 `ffmpeg -i` 로 대체 확인했다.
+결과: `Duration: 00:03:21.00`(=201초, `totalDuration()` 과 정확히 일치) · `1920x1080` · `12 fps` — 기대와 일치.
+
+- [x] **Step 5: 눈으로 확인한다**
 
 영상을 `SendUserFile` 로 보내 사용자가 직접 보게 한다. 자막이 잘리거나 하이라이트가 엉뚱한 곳을 가리키면 대본을 고치고 Task 4 를 다시 돌린다.
 
-- [ ] **Step 6: 커밋**
+실제 확인: `AI세무사_사용설명.mp4` 전체(3분 21초)를 `SendUserFile` 로 전달, 사용자 확인 대기 중.
+
+- [x] **Step 6: 커밋**
 
 ```bash
 cd "C:/Users/brugl/OneDrive/바탕 화면/test"
@@ -910,6 +922,8 @@ git update-ref refs/heads/main "$C" && git push origin main
 ```
 
 **주의:** MP4 는 저장소에 커밋하지 않는다. 수십 MB 이고 재생성할 수 있다. `.gitignore` 에 `*.mp4` 를 추가한다.
+
+실제로는 Task 3 커밋에서 이미 `.gitignore` 에 파일명을 그대로(`AI세무사_사용설명.mp4`) 추가해 뒀다 — 산출물 이름이 고정돼 있어 와일드카드보다 명시적인 쪽을 택했다.
 
 ---
 
