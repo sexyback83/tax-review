@@ -180,6 +180,33 @@
   .warn-list li { font-size: 12.5px; line-height: 1.65; color: #6b4a13; }
   .warn-body { font-size: 12.5px; line-height: 1.65; color: #6b4a13; }
 
+  /* ── 가업상속공제 사전 확인 (업종·요건 체크리스트) ── */
+  .succ-panel { margin-bottom: 30px; padding: 22px; background: #fff; border: 1px solid var(--line); border-radius: 14px; }
+  .succ-panel .field { margin-bottom: 0; }
+  .succ-result { margin-top: 12px; padding: 12px 14px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
+  .succ-result.empty { color: var(--muted); background: var(--done); }
+  .succ-result.ok { background: #eaf6ec; border: 1px solid #bfe0c4; color: #1f7a3d; }
+  .succ-result.cond { background: #fdf4e7; border: 1px solid #e8d5b0; color: #8a5a12; }
+  .succ-result.no { background: #fdecec; border: 1px solid #eec3c3; color: #a3312b; }
+  .succ-check-title { font-size: 12.5px; font-weight: 600; color: var(--ink-2); margin: 20px 0 6px; }
+  .succ-check-item {
+    display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left;
+    padding: 9px 6px; border: none; background: none; cursor: pointer; border-radius: 8px;
+  }
+  .succ-check-item:hover { background: var(--done); }
+  .succ-check-box {
+    width: 18px; height: 18px; flex: none; margin-top: 2px; border-radius: 5px;
+    border: 1.5px solid var(--line); background: #fff; position: relative;
+  }
+  .succ-check-item.on .succ-check-box { background: var(--accent); border-color: var(--accent); }
+  .succ-check-item.on .succ-check-box::after {
+    content: ''; position: absolute; left: 5px; top: 2px; width: 5px; height: 9px;
+    border-right: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(45deg);
+  }
+  .succ-check-label { font-size: 13.5px; color: var(--ink); line-height: 1.5; display: block; }
+  .succ-check-basis { font-size: 11.5px; color: var(--muted); margin-top: 2px; display: block; }
+  .succ-summary { margin-top: 16px; padding: 12px 14px; border-radius: 10px; background: var(--done); font-size: 12.5px; color: var(--ink-2); }
+
   .edit-toggle {
     width: 100%; padding: 16px 20px; border-radius: 14px; border: 1px solid var(--line); background: #fff;
     cursor: pointer; display: flex; align-items: center; justify-content: space-between; font-size: 15px; font-weight: 500; color: var(--ink);
@@ -1659,7 +1686,7 @@ const ITEMS = [
       if (r.unrelatedAssetRate > 0 && g.num('landArea') > 0) {
         notes.push('사업무관자산에 위 토지가 포함되어 있으면 토지 조정과 사업무관자산 제외가 겹칩니다. 두 값의 범위가 서로 겹치지 않는지 확인해 주세요.');
       }
-      notes.push('업종 판정(세세분류 727개), 사후관리 10년, 심사위원회 절차는 계산 대상이 아니어서 반영되지 않았습니다.');
+      notes.push('업종 판정은 위 「가업상속공제 사전 확인」란에서 참고용으로 안내합니다. 사후관리 10년, 심사위원회 절차는 세액 계산 대상이 아니어서 이 결과에는 반영되지 않았습니다.');
       return {
         total: payable(r),
         label: isSpecial
@@ -2210,7 +2237,74 @@ function renderStep4() {
     + '<div class="mode-line"><span>' + (state.mode === 'simple' ? '간편' : '심화') + ' 모드</span>'
     + '<button class="link" data-act="swapMode">'
     + (state.mode === 'simple' ? '심화로 바꾸기' : '간편으로 바꾸기') + '</button></div>'
+    + (state.item === 'succession' ? successionCheckHtml() : '')
     + '<div class="fields">' + rows + '</div></div>';
+}
+
+// ── 가업상속공제 사전 확인 — 업종코드 판정과 피상속인·상속인 요건 체크리스트 ──
+// 세액을 계산하지 않는 정성적 확인이라 item.fields·run()과는 분리해 둔다.
+// 업종표·요건 문구는 calc.js 의 SUCCESSION_INDUSTRY_CODES·SUCCESSION_*_REQUIREMENTS 를 그대로 쓴다.
+
+function succCheckedCount(list, prefix) {
+  return list.filter((r) => state.vals[prefix + r.id] === 'Y').length;
+}
+
+function succReqListHtml(list, prefix) {
+  return list.map((r) => {
+    const key = prefix + r.id;
+    const on = state.vals[key] === 'Y';
+    return '<button type="button" class="succ-check-item' + (on ? ' on' : '') + '" data-act="succToggle" data-k="' + key + '">'
+      + '<span class="succ-check-box"></span>'
+      + '<span class="succ-check-text"><span class="succ-check-label">' + esc(r.label) + '</span>'
+      + '<span class="succ-check-basis">' + esc(r.basis) + '</span></span>'
+      + '</button>';
+  }).join('');
+}
+
+function succResultHtml() {
+  const code = state.vals.succCode || '';
+  const r = checkSuccessionIndustry(code);
+  if (!r.normalized) {
+    return '<div class="succ-result empty">업종코드를 입력하면 가업상속공제 적용대상 업종(727개)인지 바로 확인합니다.</div>';
+  }
+  const approxNote = r.approximate
+    ? ' 입력값과 정확히 일치하는 코드가 없어 앞자리가 일치하는 업종을 참고로 표시했습니다 — 사업자등록증의 정확한 업종코드로 다시 확인하세요.'
+    : '';
+  if (!r.matched) {
+    return '<div class="succ-result no">입력하신 업종코드 「' + esc(code)
+      + '」는 가업상속공제 적용대상 업종 목록에 없습니다. 코드를 다시 확인하거나 세무 전문가에게 문의하세요.</div>';
+  }
+  if (r.note) {
+    return '<div class="succ-result cond">' + esc(r.categoryName + ' · ' + r.name)
+      + ' — 적용대상 업종이지만 조건이 있습니다: ' + esc(r.note) + esc(approxNote) + '</div>';
+  }
+  return '<div class="succ-result ok">' + esc(r.categoryName + ' · ' + r.name)
+    + ' — 가업상속공제 적용대상 업종입니다.' + esc(approxNote) + '</div>';
+}
+
+function succSummaryHtml() {
+  const r = checkSuccessionIndustry(state.vals.succCode || '');
+  const indState = !r.normalized ? '미확인' : (r.matched ? (r.note ? '조건부 해당' : '해당') : '비해당');
+  const decOk = succCheckedCount(SUCCESSION_DECEDENT_REQUIREMENTS, 'succ_dec_') === SUCCESSION_DECEDENT_REQUIREMENTS.length;
+  const heirOk = succCheckedCount(SUCCESSION_HEIR_REQUIREMENTS, 'succ_heir_') === SUCCESSION_HEIR_REQUIREMENTS.length;
+  return '가업상속공제 사전요건 — 업종 ' + indState
+    + ' · 피상속인 요건 ' + (decOk ? '충족' : '미충족')
+    + ' · 상속인 요건 ' + (heirOk ? '충족' : '미충족');
+}
+
+function successionCheckHtml() {
+  return '<div class="succ-panel">'
+    + '<div class="block-label">가업상속공제 사전 확인 (참고용 — 최종 판단은 세무 전문가 확인 필요)</div>'
+    + '<div class="field"><label>사업자등록증 업종코드</label>'
+    + '<div class="num-wrap"><input class="num" inputmode="numeric" placeholder="예: 46592" autocomplete="off"'
+    + ' style="text-align:left" data-inp="succCode" value="' + esc(state.vals.succCode || '') + '"></div></div>'
+    + '<div id="succResult">' + succResultHtml() + '</div>'
+    + '<div class="succ-check-title">피상속인 요건 (상증법 제18조의2 제1항)</div>'
+    + succReqListHtml(SUCCESSION_DECEDENT_REQUIREMENTS, 'succ_dec_')
+    + '<div class="succ-check-title">상속인 요건 (상증법 시행령 제15조 제3항 제2호)</div>'
+    + succReqListHtml(SUCCESSION_HEIR_REQUIREMENTS, 'succ_heir_')
+    + '<div id="succSummary" class="succ-summary">' + esc(succSummaryHtml()) + '</div>'
+    + '</div>';
 }
 
 function resultHtml() {
@@ -2659,6 +2753,13 @@ function refreshDerived() {
     const area = document.getElementById('resultArea');
     if (area) area.innerHTML = resultHtml();
   }
+  // 가업상속공제 사전 확인 — 업종코드를 입력하는 동안 판정 결과·요약만 갱신한다.
+  if (state.step === 4 && state.item === 'succession') {
+    const resBox = document.getElementById('succResult');
+    if (resBox) resBox.innerHTML = succResultHtml();
+    const sumBox = document.getElementById('succSummary');
+    if (sumBox) sumBox.textContent = succSummaryHtml();
+  }
   // 종합 결과에서 펼쳐 고치는 중인 카드만 다시 계산한다. 나머지 카드는 손대지 않는다.
   if (state.step === STEP_SUMMARY && state.sumEdit) {
     const box = document.getElementById('sumLive');
@@ -2755,6 +2856,12 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (act === 'choice') { state.vals[el.dataset.k] = el.dataset.v; render(); return; }
+  if (act === 'succToggle') {
+    const k = el.dataset.k;
+    state.vals[k] = state.vals[k] === 'Y' ? '' : 'Y';
+    render();
+    return;
+  }
   if (act === 'item') {
     const key = el.dataset.v;
     openItem(key, state.done.indexOf(key) >= 0);
@@ -2772,6 +2879,16 @@ document.addEventListener('input', (e) => {
     const digits = el.value.replace(/\D/g, '').slice(0, 8);
     if (el.value !== digits) el.value = digits;
     state.birth = digits;
+    refreshDerived();
+    return;
+  }
+  // 가업상속공제 사전 확인 — 업종코드. 국세청 업종코드(6자리)까지 받아들이고
+  // 판정은 checkSuccessionIndustry()의 접두 일치 규칙에 맡긴다.
+  if (kind === 'succCode') {
+    const digits = el.value.replace(/\D/g, '').slice(0, 6);
+    if (el.value !== digits) el.value = digits;
+    state.vals.succCode = digits;
+    if (editingSaved()) saveCurrent();
     refreshDerived();
     return;
   }

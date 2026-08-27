@@ -32,6 +32,11 @@ const {
   calculateComprehensiveRealEstateTax,
   calculateTransferIncomeTax,
   calculateBusinessSuccession,
+  SUCCESSION_INDUSTRY_CATEGORIES,
+  SUCCESSION_INDUSTRY_CODES,
+  SUCCESSION_DECEDENT_REQUIREMENTS,
+  SUCCESSION_HEIR_REQUIREMENTS,
+  checkSuccessionIndustry,
   calculateWeightedNetIncome,
   calculateUnlistedStockValue,
   calculateServiceYearsFromMonths,
@@ -1662,6 +1667,61 @@ test('세대생략 증여 GS9: 부담부증여는 채무인수분을 뺀 증여�
   });
   assert.equal(r.giftPortion, 1900000000);
   assert.equal(r.generationSkipRate, 0.3);
+});
+
+// ══════════════════════════ 가업상속공제 적용대상업종 확인 ══════════════════════════
+// 근거: 상증법 시행령 제15조 제1항 [별표] — FC가 보유한 별표 원문(엑셀 표기)을 그대로 전사했다.
+// 727은 그 별표 전체의 세세분류 개수다(구현 이전 결과 화면 고지 문구에도 같은 수가 있었다).
+
+test('가업상속공제 업종표: 별표 전체 727개, 코드 중복 없음', () => {
+  assert.equal(SUCCESSION_INDUSTRY_CODES.length, 727);
+  const codes = SUCCESSION_INDUSTRY_CODES.map((row) => row[1]);
+  assert.equal(new Set(codes).size, codes.length);
+  // 모든 코드는 SUCCESSION_INDUSTRY_CATEGORIES 에 정의된 대분류를 참조해야 한다.
+  SUCCESSION_INDUSTRY_CODES.forEach((row) => {
+    assert.ok(SUCCESSION_INDUSTRY_CATEGORIES[row[0]], `대분류 없음: ${row[0]} (${row[1]})`);
+  });
+});
+
+test('업종 판정: 정확히 일치하는 코드는 적용대상으로 판정한다', () => {
+  const r = checkSuccessionIndustry('62010');
+  assert.equal(r.matched, true);
+  assert.equal(r.approximate, false);
+  assert.equal(r.category, 'J');
+  assert.equal(r.name, '컴퓨터 프로그래밍 서비스업');
+  assert.equal(r.note, '');
+});
+
+test('업종 판정: 목록에 없는 코드는 비대상으로 판정한다', () => {
+  const r = checkSuccessionIndustry('99999');
+  assert.equal(r.matched, false);
+});
+
+test('업종 판정: 사업자등록증 6자리 코드는 표준산업분류 코드를 접두로 보고 참고 판정한다', () => {
+  const r = checkSuccessionIndustry('620100');
+  assert.equal(r.matched, true);
+  assert.equal(r.approximate, true);
+  assert.equal(r.matchedCode, '62010');
+});
+
+test('업종 판정: 음식점업(56111~56199)은 직접 조리하지 않으면 제외된다는 단서가 붙는다', () => {
+  const r = checkSuccessionIndustry('56111');
+  assert.equal(r.matched, true);
+  assert.ok(r.note.indexOf('직접') >= 0);
+});
+
+test('업종 판정: 빈 입력은 미확인으로 본다(비대상으로 오판하지 않는다)', () => {
+  const r = checkSuccessionIndustry('');
+  assert.equal(r.normalized, '');
+  assert.equal(r.matched, false);
+});
+
+test('가업상속공제 요건 체크리스트: 피상속인 3항목 · 상속인 4항목 (상증법 제18조의2, 시행령 제15조 제3항)', () => {
+  assert.equal(SUCCESSION_DECEDENT_REQUIREMENTS.length, 3);
+  assert.equal(SUCCESSION_HEIR_REQUIREMENTS.length, 4);
+  SUCCESSION_DECEDENT_REQUIREMENTS.concat(SUCCESSION_HEIR_REQUIREMENTS).forEach((r) => {
+    assert.ok(r.id && r.label && r.basis);
+  });
 });
 
 if (failed) process.exitCode = 1;
