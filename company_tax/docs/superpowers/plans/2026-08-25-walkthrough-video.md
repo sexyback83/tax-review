@@ -458,7 +458,7 @@ git update-ref refs/heads/main "$C" && git push origin main
 
 **핵심 결정:** `seek` 은 **되감기를 지원하지 않고 앞으로만 간다.** 도구는 상태를 가진 앱이라 시간을 되돌린다고 상태가 되돌아가지 않는다. 되감아야 하면 iframe 을 다시 싣고 0 부터 따라잡는다(`replayTo`). 촬영은 t 를 단조 증가시키므로 이 비용을 치를 일이 없다.
 
-- [ ] **Step 1: 조작 표와 헬퍼를 쓴다**
+- [x] **Step 1: 조작 표와 헬퍼를 쓴다**
 
 `walkthrough.html` 의 `TOOL_URL` 선언 아래에 이어 붙인다:
 
@@ -506,7 +506,10 @@ const ACTIONS = {
 };
 ```
 
-- [ ] **Step 2: 오버레이 그리기와 player 를 쓴다**
+- [x] **Step 2: 오버레이 그리기와 player 를 쓴다**
+
+Task 2 에서 임시로 넣었던 `document.getElementById('app').src = TOOL_URL;` 한 줄은 뺐다 —
+이 Step 의 `load()` 가 `player.ready`·`_at` 초기화까지 함께 하는 정식 경로라 임시 줄과 중복된다.
 
 이어서 붙인다:
 
@@ -649,7 +652,7 @@ window.player = player;
 load().then(() => { player.seek(0); });
 ```
 
-- [ ] **Step 3: 셀렉터 무결성 검사를 만든다**
+- [x] **Step 3: 셀렉터 무결성 검사를 만든다**
 
 의존성을 설치하고 검사 스크립트를 만든다.
 
@@ -752,12 +755,18 @@ main().catch((e) => { console.error(e.message); process.exit(1); });
 
 이 단계의 산출물은 `--check` 경로다. 촬영·인코딩은 Task 4 에서 이 두 함수를 갈아 끼운다.
 
-- [ ] **Step 4: 검사를 돌려 통과를 확인한다**
+- [x] **Step 4: 검사를 돌려 통과를 확인한다**
 
 Run: `cd "C:/Users/brugl/OneDrive/바탕 화면/ai project" && node build-video.js --check`
 Expected: `모든 focus 셀렉터가 살아 있습니다`. 실패하면 어느 beat 의 어느 셀렉터인지 출력되므로 대본을 고친다.
 
-- [ ] **Step 5: 커밋**
+실제 확인(원격 환경): `AI세무사_단일파일.html` 은 커밋된 산출물이 아니라 `node build-standalone.js` 로 그때그때 만드는 빌드 산출물이라, 먼저 그것부터 돌려 만들었다.
+puppeteer 는 `PUPPETEER_SKIP_DOWNLOAD=true` 로 설치해 이미 있는 Playwright 크로미움을 재사용했다(`PUPPETEER_EXECUTABLE_PATH` 로 지정).
+이 컨테이너는 root 로 돌기 때문에 크로미움 샌드박스가 거부된다 — 검증에서만 `--no-sandbox` 를 임시로 넣어 실행을 확인한 뒤 커밋 전에 원래 코드로 되돌렸다(사용자 실제 환경에서는 root 가 아니므로 이 문제가 없다).
+출력: `대본 검사 — beat 37개 / 길이 201초` / `모든 focus 셀렉터가 살아 있습니다` — 기대와 일치.
+추가로 Playwright 로 같은 대본을 한 번 더 훑어(각 beat 중간 시각에 seek) 37개 beat 전부의 focus 셀렉터가 잡히고 자바스크립트 오류가 없음을 별도로 확인했다.
+
+- [x] **Step 5: 커밋**
 
 ```bash
 cd "C:/Users/brugl/OneDrive/바탕 화면/test"

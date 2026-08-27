@@ -1,0 +1,24 @@
+{
+  "name": "tax-review",
+  "version": "1.0.0",
+  "description": "상담 자리에서 고객의 예상 세금을 개산하는 단일 페이지 웹 도구. 상속·증여·양도·법인 8개 세목을 5단계 위저드로 순회하고, 결과에 계산 과정과 적용 기준을 함께 낸다.",
+  "main": "build-standalone.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sexyback83/tax-review.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/sexyback83/tax-review/issues"
+  },
+  "homepage": "https://github.com/sexyback83/tax-review#readme",
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0",
+    "puppeteer": "^25.9.0"
+  }
+}

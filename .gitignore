@@ -11,3 +11,8 @@ __pycache__/
 # 카카오 지도 스파이크 - JS 키 (커밋 금지)
 kakao-key.js
 kakao-rest-key.txt
+
+# 사용 설명 영상 빌드 산출물 — build-standalone.js/build-video.js 로 다시 만든다
+package-lock.json
+AI세무사_단일파일.html
+AI세무사_사용설명.mp4

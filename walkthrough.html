@@ -100,7 +100,185 @@
 // 도구 주소는 여기 한 곳에만 둔다. 스테이징 폴더에서도, gh-pages 에 올린 뒤에도
 // 도구가 index.html 이므로 이 상대경로가 그대로 맞는다.
 const TOOL_URL = './index.html';
-document.getElementById('app').src = TOOL_URL;
+
+const app = document.getElementById('app');
+const $ = (id) => document.getElementById(id);
+
+// iframe 안의 도구를 조작하는 헬퍼. 같은 오리진이므로 DOM 에 직접 닿는다.
+const doc = () => app.contentDocument;
+const q = (sel) => doc().querySelector(sel);
+function click(sel) {
+  const el = q(sel);
+  if (!el) throw new Error('클릭 대상을 찾지 못했습니다: ' + sel);
+  el.click();
+}
+// 입력은 값만 넣으면 도구가 모른다. 도구가 듣는 input 이벤트를 함께 보낸다.
+function type(sel, value) {
+  const el = q(sel);
+  if (!el) throw new Error('입력 대상을 찾지 못했습니다: ' + sel);
+  el.value = value;
+  el.dispatchEvent(new app.contentWindow.Event('input', { bubbles: true }));
+}
+function scrollBy(px) { app.contentWindow.scrollTo({ top: px, behavior: 'instant' }); }
+
+// 대본의 act 이름이 여기로 온다. 대본은 순수 데이터로 두고 동작은 여기 모은다.
+const ACTIONS = {
+  startTax() { click('[data-act="startTax"]'); },
+  fillCustomer() {
+    type('input[data-inp="customerName"]', '홍길동');
+    click('[data-act="sex"][data-v="M"]');
+    type('input[data-inp="birth"]', '19620314');
+  },
+  toStep2() { click('[data-act="next"]'); },
+  pickSimple() { click('[data-act="mode"][data-v="simple"]'); },
+  pickInherit() { click('[data-act="item"][data-v="inherit"]'); },
+  typeRealEstate() { type('input[data-inp="val"][data-k="re"]', '200000'); },
+  typeCash() { type('input[data-inp="val"][data-k="cash"]', '100000'); },
+  toResult() { click('[data-act="next"]'); scrollBy(0); },
+  scrollSteps() { scrollBy(420); },
+  scrollNotice() { scrollBy(900); },
+  toSummary() { scrollBy(0); click('[data-act="gotoSummary"]'); },
+  openEdit() { click('[data-act="sumEdit"]'); },
+  editRealEstate() { type('input[data-inp="val"][data-k="re"]', '300000'); },
+  toFp() { scrollBy(0); click('[data-act="gotoFp"]'); },
+};
+
+// 대상 요소를 무대 좌표로 옮긴다. iframe 은 무대 안에서 (460, 96) 에 있다.
+const FRAME_X = 460, FRAME_Y = 96;
+function rectOf(sel) {
+  const el = q(sel);
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  if (r.width === 0 && r.height === 0) return null;
+  return { x: r.left + FRAME_X, y: r.top + FRAME_Y, w: r.width, h: r.height };
+}
+
+function showHighlight(sel) {
+  const ids = ['dimT', 'dimB', 'dimL', 'dimR'];
+  const r = sel ? rectOf(sel) : null;
+  if (!r) {
+    ids.forEach((i) => $(i).classList.remove('on'));
+    $('ring').classList.remove('on');
+    return;
+  }
+  const pad = 8;
+  const box = { x: r.x - pad, y: r.y - pad, w: r.w + pad * 2, h: r.h + pad * 2 };
+  const set = (id, x, y, w, h) => {
+    const e = $(id);
+    e.style.left = x + 'px'; e.style.top = y + 'px';
+    e.style.width = Math.max(0, w) + 'px'; e.style.height = Math.max(0, h) + 'px';
+    e.classList.add('on');
+  };
+  set('dimT', 0, 0, 1920, box.y);
+  set('dimB', 0, box.y + box.h, 1920, 1080 - box.y - box.h);
+  set('dimL', 0, box.y, box.x, box.h);
+  set('dimR', box.x + box.w, box.y, 1920 - box.x - box.w, box.h);
+  const ring = $('ring');
+  ring.style.left = box.x + 'px'; ring.style.top = box.y + 'px';
+  ring.style.width = box.w + 'px'; ring.style.height = box.h + 'px';
+  ring.classList.add('on');
+}
+
+// 대상 옆 자막. 대상 오른쪽에 두되 무대를 넘치면 왼쪽으로 넘긴다.
+function showNote(text, sel) {
+  const note = $('note'), lead = $('lead');
+  const r = sel ? rectOf(sel) : null;
+  if (!text || !r) { note.classList.remove('on'); lead.classList.remove('on'); return; }
+  note.textContent = text;
+  note.classList.add('on');
+  const nw = note.offsetWidth, nh = note.offsetHeight;
+  const gap = 28;
+  let x = r.x + r.w + gap;
+  if (x + nw > 1880) x = r.x - gap - nw;
+  const y = Math.min(Math.max(r.y + r.h / 2 - nh / 2, 20), 1080 - nh - 20);
+  note.style.left = x + 'px'; note.style.top = y + 'px';
+  const lx = x > r.x ? r.x + r.w : x + nw;
+  lead.style.left = Math.min(lx, r.x + r.w) + 'px';
+  lead.style.top = (r.y + r.h / 2) + 'px';
+  lead.style.width = Math.abs((x > r.x ? x : r.x) - lx) + 'px';
+  lead.style.height = '2px';
+  lead.classList.add('on');
+}
+
+const CARD_SECONDS = 0.9;   // 장 제목 카드가 떠 있는 시간
+
+const player = {
+  duration: totalDuration(),
+  ready: false,
+  _at: -1,        // 지금 그려진 beat 번호
+  _raf: 0,
+  _t: 0,
+
+  seek(t) {
+    const { index, beat, elapsed } = beatAt(t);
+    if (index < this._at) throw new Error('되감기는 replay() 로만 됩니다');
+    // 지나친 beat 의 act 를 순서대로 밀린 것 없이 실행한다.
+    while (this._at < index) {
+      this._at++;
+      const name = BEATS[this._at].act;
+      if (name) {
+        if (!ACTIONS[name]) throw new Error('모르는 act: ' + name);
+        ACTIONS[name]();
+      }
+    }
+    this._t = t;
+    $('say').textContent = beat.say;
+    $('badge').textContent = beat.ch;
+    const title = chapterTitles().find((c) => c.ch === beat.ch);
+    $('chap').textContent = title ? title.title : '';
+    showHighlight(beat.focus);
+    showNote(beat.note, beat.focus);
+    // 장이 바뀐 직후에는 제목 카드를 덮는다.
+    const isNewChapter = !!beat.title;
+    const card = $('card');
+    if (isNewChapter && elapsed < CARD_SECONDS) {
+      $('cardNum').textContent = beat.ch;
+      $('cardTitle').textContent = beat.title;
+      card.classList.add('on');
+    } else {
+      card.classList.remove('on');
+    }
+  },
+
+  // 되감기는 iframe 을 다시 싣고 0 부터 따라잡는다.
+  async replay(t) {
+    await load();
+    for (let s = 0; s <= t; s += 0.25) this.seek(s);
+    this.seek(t);
+  },
+
+  play() {
+    const t0 = performance.now() / 1000 - this._t;
+    const tick = () => {
+      const t = performance.now() / 1000 - t0;
+      if (t >= this.duration) { this.seek(this.duration); return; }
+      this.seek(t);
+      this._raf = requestAnimationFrame(tick);
+    };
+    tick();
+  },
+  pause() { cancelAnimationFrame(this._raf); },
+};
+
+function load() {
+  return new Promise((resolve) => {
+    player.ready = false;
+    player._at = -1;
+    app.onload = () => { player.ready = true; resolve(); };
+    app.src = TOOL_URL;
+  });
+}
+
+// 무대를 화면에 맞춰 축소한다. 촬영(1920×1080)에서는 배율이 1 이 된다.
+function fit() {
+  const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+  $('stage').style.transform = 'scale(' + s + ')';
+}
+addEventListener('resize', fit);
+fit();
+
+window.player = player;
+load().then(() => { player.seek(0); });
 </script>
 </body>
 </html>
