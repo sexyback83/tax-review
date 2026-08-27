@@ -52,13 +52,15 @@
 
 ```
 tax-review/
-  index.html          화면 전부 (인라인 CSS·JS. 약 2,850줄)
-  calc.js             세액 계산 순수 함수 (약 1,240줄)
-  fp.js               FP센터 데이터와 거리·투영 함수 (약 135줄)
-  calc.test.js        회귀 테스트 — 구현이 설계대로인지 (124건)
-  audit.test.js       법령 대조 감사 — 설계가 법대로인지 (36건 + 범위제외 1건)
-  fp.test.js          FP센터 단언 253개
-  assets/             로컬 이미지 (로고·캐릭터)
+  index.html                 화면 전부 (인라인 CSS·JS. 약 2,900줄)
+  calc.js                    세액 계산 순수 함수 (약 1,240줄)
+  succession-industry.js     가업상속공제 적용대상업종 표(727개)·판정 함수·요건 데이터
+  fp.js                      FP센터 데이터와 거리·투영 함수 (약 135줄)
+  calc.test.js               회귀 테스트 — 구현이 설계대로인지 (124건)
+  succession-industry.test.js 업종표 구조·판정 로직 회귀 테스트 (7건)
+  audit.test.js              법령 대조 감사 — 설계가 법대로인지 (36건 + 범위제외 1건)
+  fp.test.js                 FP센터 단언 253개
+  assets/                    로컬 이미지 (로고·캐릭터)
   oracle/             독립 재구현 교차검증
     calc.py           Python 재구현 (표준 라이브러리만)
     calc.js           JS 재구현
@@ -69,9 +71,17 @@ tax-review/
     test_calc.py      pytest (28건)
 ```
 
-`calc.js` 는 `<script src="calc.js">` 로 **클래식 스크립트**로 싣는다(모듈 아님).
-그래서 최상위 `const`·`function` 이 뒤따르는 인라인 스크립트에 그대로 보인다 — 이 점에 의존한다.
-동시에 파일 끝에서 `module.exports` 로도 내보내 node 테스트가 쓸 수 있게 한다.
+`calc.js`·`succession-industry.js`·`fp.js` 는 각각 `<script src="...">` 로 **클래식
+스크립트**로 싣는다(모듈 아님). 그래서 최상위 `const`·`function` 이 뒤따르는 인라인
+스크립트에 그대로 보인다 — 이 점에 의존한다. 로드 순서는 `calc.js` → `succession-industry.js`
+→ `fp.js` → 인라인 스크립트다. 세 파일 모두 파일 끝에서 `module.exports` 로도 내보내
+node 테스트가 쓸 수 있게 한다.
+
+`succession-industry.js` 를 `calc.js` 와 분리해 둔 이유는 성격이 다르기 때문이다 —
+`calc.js` 는 세액을 계산하는 순수 함수만 담고, `succession-industry.js` 는 세액을 계산하지
+않는 정성적 판정(업종코드 대조·요건 체크리스트)과 그 근거가 되는 법령 별표 데이터를 담는다.
+국세청 고시로 업종표가 개정되면 이 파일의 `SUCCESSION_INDUSTRY_CODES` 배열만 고치면 되고,
+`calc.js` 의 세액 계산 로직·테스트는 건드리지 않는다.
 
 ---
 
@@ -192,8 +202,9 @@ const ITEMS = [{
 **8번 필드 입력 화면 상단에는 「가업상속공제 사전 확인」 패널이 붙는다.** 세액을 계산하지 않는
 정성적 체크리스트라 `item.fields`·`run()`과는 분리해 두었다 — `renderStep4()`가
 `state.item === 'succession'` 일 때만 `successionCheckHtml()`을 끼워 넣는다.
-- 사업자등록증 업종코드를 입력하면 `calc.js`의 `checkSuccessionIndustry()`가 727개 적용대상
-  업종표(`SUCCESSION_INDUSTRY_CODES`, 상증법 시행령 제15조 [별표])와 대조해 즉시 결과를 보여준다.
+- 사업자등록증 업종코드를 입력하면 `succession-industry.js`의 `checkSuccessionIndustry()`가
+  727개 적용대상 업종표(`SUCCESSION_INDUSTRY_CODES`, 상증법 시행령 제15조 [별표])와 대조해
+  즉시 결과를 보여준다.
   정확히 일치하지 않으면 국세청 업종코드(6자리)가 표준산업분류 코드를 앞자리로 포함한다고 보고
   가장 긴 접두 일치를 참고로 보여주며(`approximate: true`), 그 사실을 화면에 함께 고지한다.
 - 피상속인 요건 3개·상속인 요건 4개(`SUCCESSION_DECEDENT_REQUIREMENTS`·`SUCCESSION_HEIR_REQUIREMENTS`,
@@ -240,13 +251,44 @@ const ITEMS = [{
 (최종 급여가 아니다 — 미입력 시 최종 3년 평균으로 갈음하고 그 사실을 화면에 고지)
 **가업승계** — 공제 한도 경영 10년 300억 / 20년 400억 / 30년 600억 ·
 증여세 과세특례 공제 10억, 10% (120억 초과분 20%)
-**가업상속공제 적용대상업종** — 상증법 시행령 제15조 제1항 [별표] 전체 727개 업종코드를
-`SUCCESSION_INDUSTRY_CODES`에 [대분류, 업종코드, 업종명, 비고] 로 옮겨 담았다. 종자·묘목
-생산업(1123)은 토지·건물가액 비율 50% 미만 조건이, 음식점업(56111~56199)은 "직접
-제조·조리하지 않으면 제외" 단서가 붙는다 — 둘 다 `비고` 칸에 그대로 남겨 화면에 보여준다.
 **2026 세제개편안** — 현행/개편안을 `BASIS_CURRENT`·`BASIS_REFORM_2026` 로 선택 가능하게 하고
 적용 연도(2027·2028·2029)별 값을 분리한다. 개편안에서만 한도가 생기는 항목은 **현행에서 `Infinity`**
 로 둔다(「한도 없음」의 의도된 표현).
+
+---
+
+## 5-1. `succession-industry.js`
+
+`calc.js` 와 분리된 별도 파일이다 — 세액을 계산하지 않고, 국세청 고시로 자주 개정될 수 있는
+법령 별표 데이터를 담기 때문이다(제7·8조: 성격이 다른 데이터는 다른 파일에 둔다).
+
+```js
+const SUCCESSION_INDUSTRY_CATEGORIES = { A: '농업, 임업 및 어업', ..., S: '협회 및 단체, 수리 및 기타 개인 서비스업' };
+const SUCCESSION_INDUSTRY_CODES = [
+  ['A', '1123', '종자 및 묘목 생산업', '가업용 자산 중 토지·건물의 가액이 ... 100분의 50 미만인 경우만 해당'],
+  ['B', '5100', '석탄 광업'],
+  // ... 상증법 시행령 제15조 제1항 [별표] 전체 727개
+];
+```
+
+근거: 상속세 및 증여세법 제18조의2 제1항 제2호, 같은 법 시행령 제15조 제1항 [별표]
+(「가업상속공제 적용 대상 업종」, 한국표준산업분류 기준). FC가 보유한 별표 원문(엑셀 표기)을
+그대로 전사했으며, 727은 별표 전체의 세세분류 개수다. 종자·묘목 생산업(1123)은 토지·건물가액
+비율 50% 미만 조건이, 음식점업(56111~56199)은 "직접 제조·조리하지 않으면 제외" 단서가
+붙는다 — 둘 다 배열의 네 번째 칸(비고)에 그대로 남겨 화면에 보여준다.
+
+함수: `checkSuccessionIndustry(inputCode)` — 숫자만 남긴 뒤 정확히 일치하는 코드를 찾고,
+없으면 가장 긴 접두 일치를 참고로 반환한다(`approximate: true`). 사업자등록증에는 표준산업분류
+(4~5자리)가 아니라 국세청 업종코드(6자리)가 적히는 경우가 많고, 그 코드가 표준산업분류
+코드를 앞자리로 포함하는 경우가 많다는 실무 관행을 반영한 규칙이다.
+
+데이터: `SUCCESSION_DECEDENT_REQUIREMENTS`(피상속인 요건 3개)·`SUCCESSION_HEIR_REQUIREMENTS`
+(상속인 요건 4개) — 상증법 제18조의2 제1항, 같은 법 시행령 제15조 제3항. 각 항목은
+`{ id, label, basis }` 형태이며 예/아니오로만 판단하는 체크리스트라 세액처럼 계산하지 않는다.
+
+**유지보수**: 국세청 고시로 적용대상 업종이 바뀌면 이 파일의 `SUCCESSION_INDUSTRY_CODES` 배열에
+`[대분류 문자, 업종코드, 업종명, 비고]` 행을 추가·삭제하면 된다. `calc.js`의 세액 계산 로직·
+`index.html`의 다른 세목 화면은 건드릴 필요가 없다.
 
 ---
 
@@ -280,6 +322,7 @@ const FP_SOURCE = { 심의번호: '25-3281', 담당: 'WM팀',
 | `audit.test.js` | 감사 — **설계가 법대로인가** | 법 조문과 국세청 세율표에서만. 구현·기존 테스트·문서를 참조하지 않는다 |
 | `oracle/` | 교차검증 — JS·Python 독립 재구현이 같은 값을 내는가 | 언어 중립 fixture |
 | `fp.test.js` | FP센터 데이터·거리·유효기간 | 하버사인 손계산 |
+| `succession-industry.test.js` | 가업상속공제 적용대상업종 표·판정 로직 회귀 | 별표 원문 개수(727)·코드 중복 없음을 눈으로 대조 |
 
 의존성 없이 `node <파일>` 로 실행되게 만든다(테스트 프레임워크 없음). pytest 만 예외.
 
@@ -297,17 +340,18 @@ const FP_SOURCE = { 심의번호: '25-3281', 담당: 'WM팀',
 
 ### 통과 기준
 ```
-node calc.test.js            → PASS 131 / FAIL 0
-node fp.test.js              → 253개 단언 통과
-node audit.test.js           → 통과 36건 / 범위 제외 1건 / 결함 0건
-node oracle/calc.test.js     → 26건 PASS
-node oracle/fixture-check.js → 43 passed, 0 failed
-node oracle/crosscheck-run.js→ 400 cases, 2,400 values, 0 mismatched
+node calc.test.js               → PASS 124 / FAIL 0
+node succession-industry.test.js→ PASS 7 / FAIL 0
+node fp.test.js                 → 253개 단언 통과
+node audit.test.js              → 통과 36건 / 범위 제외 1건 / 결함 0건
+node oracle/calc.test.js        → 26건 PASS
+node oracle/fixture-check.js    → 43 passed, 0 failed
+node oracle/crosscheck-run.js   → 400 cases, 2,400 values, 0 mismatched
 python -m pytest oracle/test_calc.py → 28 passed
 ```
-`calc.test.js` 131건 중 7건은 가업상속공제 적용대상업종 판정(`checkSuccessionIndustry`) —
-세액을 계산하지 않으므로 oracle 교차검증·감사(`audit.test.js`) 대상에는 넣지 않았다.
-대신 별표 원문 전사가 맞는지는 총 개수(727)와 코드 중복 없음으로 구조적으로 검증한다.
+`succession-industry.test.js`는 세액을 계산하지 않는 판정 로직이라 oracle 교차검증·감사
+(`audit.test.js`) 대상에는 넣지 않았다. 대신 별표 원문 전사가 맞는지는 총 개수(727)와
+코드 중복 없음으로 구조적으로 검증한다.
 
 ---
 

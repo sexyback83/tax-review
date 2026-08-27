@@ -1,6 +1,6 @@
 ---
 name: tax-review
-description: 삼성생명 FC용 상담 사전검토 도구(company_tax/tax-review/)의 8개 세목 — 상속세·증여세·종합부동산세·양도소득세·비상장주식 평가·급여및배당·임원퇴직금·가업승계 — 을 계산하거나, 그 코드(index.html, calc.js, fp.js)를 고치거나, 세율·공제 한도의 법령 근거를 확인할 때 사용하세요. "상속재산 30억이면 세금 얼마", "배우자상속공제 얼마까지", "부담부증여 세금", "임원퇴직금 한도", "가까운 FP센터" 같은 질문에는 도구 이름이 언급되지 않아도 반드시 이 스킬을 씁니다. 2026 세제개편안과 현행을 비교할 때도 마찬가지입니다.
+description: 삼성생명 FC용 상담 사전검토 도구(company_tax/tax-review/)의 8개 세목 — 상속세·증여세·종합부동산세·양도소득세·비상장주식 평가·급여및배당·임원퇴직금·가업승계(가업상속공제 적용대상업종 판정·요건 체크리스트 포함) — 을 계산하거나, 그 코드(index.html, calc.js, succession-industry.js, fp.js)를 고치거나, 세율·공제 한도의 법령 근거를 확인할 때 사용하세요. "상속재산 30억이면 세금 얼마", "배우자상속공제 얼마까지", "부담부증여 세금", "임원퇴직금 한도", "가까운 FP센터" 같은 질문에는 도구 이름이 언급되지 않아도 반드시 이 스킬을 씁니다. 2026 세제개편안과 현행을 비교할 때도 마찬가지입니다.
 ---
 
 # 세무 검토 도구 (AI 세무사)
@@ -40,7 +40,7 @@ node .claude/skills/tax-review/scripts/tax.js fp 37.4979 127.0276
 
 ## 코드를 고치기 전에
 
-`index.html` · `calc.js` · `fp.js` 를 고치는 작업이라면, 먼저 프로젝트 루트의
+`index.html` · `calc.js` · `succession-industry.js` · `fp.js` 를 고치는 작업이라면, 먼저 프로젝트 루트의
 **`AI세무사_에이전트_재생성_프롬프트.md`** 를 읽는다. 규칙 본문을 여기 복사해 두지 않았다 —
 준법·법령 텍스트를 두 벌 두면 한쪽만 고쳐진다.
 
@@ -57,6 +57,7 @@ node .claude/skills/tax-review/scripts/tax.js fp 37.4979 127.0276
 | 명령 | 통과 기준 |
 |---|---|
 | `node calc.test.js` | PASS 124 / FAIL 0 |
+| `node succession-industry.test.js` | PASS 7 / FAIL 0 |
 | `node fp.test.js` | 253개 단언 통과 |
 | `node audit.test.js` | 통과 36건 / 범위 제외 1건 / 결함 0건 |
 | `node oracle/calc.test.js` | 26건 PASS |
@@ -96,8 +97,10 @@ node .claude/skills/tax-review/scripts/tax.js selftest
 |---|---|
 | `index.html` | 화면 전부 (인라인 CSS·JS). 입력 수집·단위 환산·결과 표시만 한다 |
 | `calc.js` | 세액 계산 순수 함수와 법정 상수. 조문 주석이 붙어 있다 |
+| `succession-industry.js` | 가업상속공제 적용대상업종 727개 표·판정 함수·피상속인/상속인 요건. 세액을 계산하지 않아 `calc.js` 와 분리했다 |
 | `fp.js` | FP센터 8곳·하버사인 거리·유효기간·지도 투영 |
 | `calc.test.js` | 회귀 — 구현이 설계대로인가 |
+| `succession-industry.test.js` | 업종표 구조(727개·중복 없음)·판정 로직 회귀 |
 | `audit.test.js` | 감사 — **설계가 법대로인가**. 구현을 참조하지 않고 조문에서만 전개한다 |
 | `oracle/` | JS·Python 독립 재구현 교차검증 |
 
