@@ -1036,7 +1036,8 @@ const ITEMS = [
               + ' · 공정시장가액비율 ' + PCT(x.fairMarketRatio)
               + ' · 과세표준 ' + W(x.taxBase)
               + (x.creditAmount > 0
-                ? ' · 거주기간 세액공제 ' + W(x.creditAmount) + (x.isCreditCapped ? ' (한도 ' + W(x.creditAmountCap) + ' 적용)' : '')
+                ? ' · ' + (x.creditFromHoldingYears ? '보유기간' : '거주기간') + ' 세액공제 '
+                + W(x.creditAmount) + (x.isCreditCapped ? ' (한도 ' + W(x.creditAmountCap) + ' 적용)' : '')
                 : '')
               + ' → 현행 대비 ' + (diff === 0 ? '동일' : (diff > 0 ? '+' : '−') + W(Math.abs(diff))),
           });

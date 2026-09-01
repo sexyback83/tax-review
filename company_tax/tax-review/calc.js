@@ -527,10 +527,13 @@ function calculateComprehensiveRealEstateTax({
         ? Math.max(termRate(holdingYears) * JONGBU_HOLDING_CREDIT_REFORM_RATIO, termRate(livingYears))
         : termRate(livingYears);
   // 공제 판정에 실제로 쓴 기간. '27년은 두 기간 중 높은 공제율을 낸 쪽이다.
-  const creditBasisYears = !isReform ? holdingYears
+  // 어느 쪽이 이겼는지를 화면이 알아야 한다 — '27년에 보유공제가 이긴 것을
+  // 「거주기간 세액공제」로 적으면 거주하지 않은 고객에게 거짓을 보여준다.
+  const creditFromHoldingYears = !isReform ? true
     : isFirstReformYear
-      ? (termRate(holdingYears) * JONGBU_HOLDING_CREDIT_REFORM_RATIO > termRate(livingYears) ? holdingYears : livingYears)
-      : livingYears;
+      ? termRate(holdingYears) * JONGBU_HOLDING_CREDIT_REFORM_RATIO > termRate(livingYears)
+      : false;
+  const creditBasisYears = creditFromHoldingYears ? holdingYears : livingYears;
   const creditRate = Math.min(JONGBU_CREDIT_LIMIT, ageCreditRate + holdingCreditRate);
 
   // 개편안은 세액공제에 금액 한도를 신설했다.
@@ -563,6 +566,7 @@ function calculateComprehensiveRealEstateTax({
     holdingCreditRate,
     creditRate,
     creditBasisYears,
+    creditFromHoldingYears,   // 기간공제가 보유기간에서 나왔는지 (개편안 '27년 판정용)
     creditAmount: Math.round(creditAmount),
     creditAmountCap,
     isCreditCapped,

@@ -901,6 +901,8 @@ test("종부세 JR7: 개편안 '27년은 보유공제(거주공제의 1/2)와 �
   });
   assert.equal(r.grossTax, 2340000);            // 과세표준 4.2억 → 150+84만
   assert.equal(r.holdingCreditRate, 0.25);      // 거주공제 50%의 1/2
+  assert.equal(r.creditFromHoldingYears, true); // 보유공제가 이겼으므로 화면도 「보유기간」으로 적어야 한다
+  assert.equal(r.creditBasisYears, 15);
   assert.equal(r.creditRate, 0.25);             // 연령공제 없음
   assert.equal(r.creditAmount, 585000);         // 234만 × 25%
   assert.equal(r.calculatedTax, 1755000);
@@ -916,6 +918,7 @@ test("종부세 JR8: 개편안 '28년 이후는 거주공제만 적용해 보유
   });
   assert.equal(r.grossTax, 2340000);
   assert.equal(r.holdingCreditRate, 0);         // 거주 0년 → 공제 없음
+  assert.equal(r.creditFromHoldingYears, false); // '28년 이후는 언제나 거주기간 기준
   assert.equal(r.creditAmount, 0);
   assert.equal(r.finalTax, 2808000);            // JR1과 같아진다
 });
