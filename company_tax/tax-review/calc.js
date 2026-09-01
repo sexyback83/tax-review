@@ -62,6 +62,40 @@ const JONGBU_TAX_BRACKETS_MULTI = [
   { upTo: Infinity, rate: 0.050 },
 ];
 
+// 2026 개편안 §(5) — 주택분 종부세 세율을 주택가액 기준으로 일원화 (종부법 제9조 제1항·제2항)
+// 구간 경계(3/6/12/25/50/94억)는 현행과 같고, 세율만 바뀐다.
+// '27년은 주택수 차등을 남겨 두고 6~12억 구간과 12억 초과 각 구간을 올린다.
+const JONGBU_TAX_BRACKETS_REFORM_2027_GENERAL = [
+  { upTo: 3 * 억, rate: 0.005 },
+  { upTo: 6 * 억, rate: 0.007 },
+  { upTo: 12 * 억, rate: 0.013 },
+  { upTo: 25 * 억, rate: 0.015 },
+  { upTo: 50 * 억, rate: 0.020 },
+  { upTo: 94 * 억, rate: 0.027 },
+  { upTo: Infinity, rate: 0.035 },
+];
+const JONGBU_TAX_BRACKETS_REFORM_2027_MULTI = [
+  { upTo: 3 * 억, rate: 0.005 },
+  { upTo: 6 * 억, rate: 0.007 },
+  { upTo: 12 * 억, rate: 0.013 },
+  { upTo: 25 * 억, rate: 0.020 },
+  { upTo: 50 * 억, rate: 0.030 },
+  { upTo: 94 * 억, rate: 0.040 },
+  { upTo: Infinity, rate: 0.050 },
+];
+// '28년 이후 — 주택수 차등 폐지. 가액만 보는 단일 표다.
+// 수치는 '27년 3주택 이상 표와 우연히 같지만, 뜻이 다르므로(차등 폐지) 따로 적는다.
+// 한쪽만 개정될 때 다른 쪽이 조용히 끌려가지 않게 하기 위함이다.
+const JONGBU_TAX_BRACKETS_REFORM_2028 = [
+  { upTo: 3 * 억, rate: 0.005 },
+  { upTo: 6 * 억, rate: 0.007 },
+  { upTo: 12 * 억, rate: 0.013 },
+  { upTo: 25 * 억, rate: 0.020 },
+  { upTo: 50 * 억, rate: 0.030 },
+  { upTo: 94 * 억, rate: 0.040 },
+  { upTo: Infinity, rate: 0.050 },
+];
+
 // ══════════════════════════ 공통 — 적용 기준 ══════════════════════════
 // 2026 세제개편안은 입법 확정 전이며 시행도 '27.1.1.~(가업상속공제는 '27.7.1.~)이다.
 // 따라서 기본값은 항상 현행이며, 개편안은 호출측이 명시적으로 선택해야 적용된다 (제약 C5).
@@ -424,6 +458,12 @@ const FAIR_MARKET_RATIO_REFORM = { [BASIS_YEAR_2027]: 0.7, [BASIS_YEAR_2028]: 0.
 const FAIR_MARKET_RATIO_REFORM_HEAVY = { [BASIS_YEAR_2027]: 0.7, [BASIS_YEAR_2028]: 0.8 };
 // 2026 개편안 §4.2 — 1세대1주택 세액공제 금액 한도 신설
 const JONGBU_CREDIT_AMOUNT_CAP_REFORM = { [BASIS_YEAR_2027]: 800 * 만, [BASIS_YEAR_2028]: 600 * 만 };
+// 2026 개편안 §(6) — 보유기간 세액공제를 거주기간 세액공제로 전환 (종부법 제9조 제5항·제8항·제9항)
+// 거주공제율은 현행 보유공제율과 같은 표(5년 20% / 10년 40% / 15년 50%)이고,
+// 보유공제율은 그 1/2 이다 (자료 표: 10% / 20% / 25%).
+//   '27년    — 보유공제와 거주공제 중 높은 공제율
+//   '28년 이후 — 거주공제만
+const JONGBU_HOLDING_CREDIT_REFORM_RATIO = 0.5;
 
 function calculateComprehensiveRealEstateTax({
   publicPrice,
@@ -461,18 +501,36 @@ function calculateComprehensiveRealEstateTax({
     : (usesHeavyRatio ? FAIR_MARKET_RATIO_REFORM_HEAVY : FAIR_MARKET_RATIO_REFORM)[basisYear];
 
   const taxBase = Math.max(0, (publicPrice - basicDeduction) * fairMarketRatio);
-  // 개편안은 세율체계를 주택수 기준에서 가액 기준으로 일원화하지만, 그 세율표 수치가
-  // 첨부 개편안 자료에 없다. 임의 세율을 만들지 않고 현행 세율표를 그대로 적용한다.
-  const brackets = isMultiHouse ? JONGBU_TAX_BRACKETS_MULTI : JONGBU_TAX_BRACKETS_GENERAL;
+  // 개편안은 주택수 기준 차등세율을 단계적으로 폐지한다.
+  // '27년은 차등을 남기고, '28년 이후는 가액만 보는 단일 표로 간다.
+  const isFirstReformYear = basisYear === BASIS_YEAR_2027;
+  const brackets = !isReform
+    ? (isMultiHouse ? JONGBU_TAX_BRACKETS_MULTI : JONGBU_TAX_BRACKETS_GENERAL)
+    : isFirstReformYear
+      ? (isMultiHouse ? JONGBU_TAX_BRACKETS_REFORM_2027_MULTI : JONGBU_TAX_BRACKETS_REFORM_2027_GENERAL)
+      : JONGBU_TAX_BRACKETS_REFORM_2028;
   const grossTax = calculateTieredTax(taxBase, brackets);
 
   // 고령자·장기보유 세액공제는 1세대1주택자에게만 적용된다.
-  // 개편안은 보유기간 공제를 거주기간 공제로 전환하되, 구간별 공제율은 자료에 없어 현행 표를 준용한다.
   const ageCreditRate = !treatAsSingleHouse ? 0
     : ownerAge >= 70 ? 0.4 : ownerAge >= 65 ? 0.3 : ownerAge >= 60 ? 0.2 : 0;
-  const creditBasisYears = isReform ? livingYears : holdingYears;
+
+  // 기간 구간별 공제율표. 현행 보유공제와 개편안 거주공제가 같은 표를 쓴다.
+  const termRate = (years) => years >= 15 ? 0.5 : years >= 10 ? 0.4 : years >= 5 ? 0.2 : 0;
+
+  // 개편안은 보유공제를 거주공제로 전환한다.
+  //   '27년    — 보유공제(거주공제의 1/2)와 거주공제 중 높은 쪽
+  //   '28년 이후 — 거주공제만. 보유기간이 아무리 길어도 거주하지 않았으면 공제가 없다.
   const holdingCreditRate = !treatAsSingleHouse ? 0
-    : creditBasisYears >= 15 ? 0.5 : creditBasisYears >= 10 ? 0.4 : creditBasisYears >= 5 ? 0.2 : 0;
+    : !isReform ? termRate(holdingYears)
+      : isFirstReformYear
+        ? Math.max(termRate(holdingYears) * JONGBU_HOLDING_CREDIT_REFORM_RATIO, termRate(livingYears))
+        : termRate(livingYears);
+  // 공제 판정에 실제로 쓴 기간. '27년은 두 기간 중 높은 공제율을 낸 쪽이다.
+  const creditBasisYears = !isReform ? holdingYears
+    : isFirstReformYear
+      ? (termRate(holdingYears) * JONGBU_HOLDING_CREDIT_REFORM_RATIO > termRate(livingYears) ? holdingYears : livingYears)
+      : livingYears;
   const creditRate = Math.min(JONGBU_CREDIT_LIMIT, ageCreditRate + holdingCreditRate);
 
   // 개편안은 세액공제에 금액 한도를 신설했다.
@@ -496,9 +554,9 @@ function calculateComprehensiveRealEstateTax({
     isMultiHouse,
     treatAsSingleHouse,        // 실제로 1세대1주택으로 계산했는지
     singleHouseSuppressed,     // 주택 수와 모순돼 1세대1주택 취급을 배제한 경우
-    // 개편안 선택 시에도 아래 두 항목은 첨부 자료에 수치가 없어 현행 기준으로 계산했다.
-    rateTableFromCurrent: isReform,
-    creditRateTableFromCurrent: isReform && creditRate > 0,
+    // 개편안 '28년 이후는 주택수 차등이 폐지돼 다주택도 같은 세율표를 쓴다.
+    usesUnifiedRateTable: isReform && !isFirstReformYear,
+    usesResidenceCreditOnly: isReform && !isFirstReformYear,
     burdenCapNotApplied: isReform,   // 세부담상한 150%→200% 전환은 전년 세액 정보가 필요해 미적용
     grossTax: Math.round(grossTax),
     ageCreditRate,
@@ -1198,6 +1256,10 @@ if (typeof module !== 'undefined' && module.exports) {
     SEPARATE_TAXATION_LIMIT,
     JONGBU_TAX_BRACKETS_GENERAL,
     JONGBU_TAX_BRACKETS_MULTI,
+    JONGBU_TAX_BRACKETS_REFORM_2027_GENERAL,
+    JONGBU_TAX_BRACKETS_REFORM_2027_MULTI,
+    JONGBU_TAX_BRACKETS_REFORM_2028,
+    JONGBU_HOLDING_CREDIT_REFORM_RATIO,
     TRANSFER_SURCHARGE_OPTIONS,
     ONE_HOUSE_EXEMPT_LIMIT,
     CORPORATE_TAX_RATE_OPTIONS,

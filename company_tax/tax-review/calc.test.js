@@ -792,6 +792,18 @@ test("양도세 TR5: 개편안 '28년은 한도 20억, 공제율은 첨부 자�
 // 기본공제: 1주택 거주 14억 / 1주택 비거주 9억 / 그 외 4억 + 5억 × 거주비중
 // 공정시장가액비율: '27 70% / '28 80%(3주택 이상·조정지역, 1세대1주택 제외), 그 외 70%
 // 세액공제 금액 한도: '27 800만원 / '28 600만원
+//
+// 세율 (개편안 §(5) 종부법 제9조 제1항·제2항) — 아래 기대값은 이 표에서 손으로 전개했다.
+//   '27년 2주택 이하 : 0.5 / 0.7 / 1.3 / 1.5 / 2.0 / 2.7 / 3.5 %
+//   '27년 3주택 이상 : 0.5 / 0.7 / 1.3 / 2.0 / 3.0 / 4.0 / 5.0 %
+//   '28년 이후(일원화): 0.5 / 0.7 / 1.3 / 2.0 / 3.0 / 4.0 / 5.0 %  ← 주택수 차등 폐지
+//   구간 경계는 현행과 같다 (3 / 6 / 12 / 25 / 50 / 94억)
+//
+// 세액공제 (개편안 §(6) 종부법 제9조 제5항·제8항·제9항)
+//   거주공제 : 5~10년 20% / 10~15년 40% / 15년 이상 50%
+//   보유공제 : 거주공제의 1/2 — 10% / 20% / 25%
+//   '27년   : 보유공제와 거주공제 중 높은 공제율
+//   '28년 이후: 거주공제만
 
 test("종부세 JR1: 개편안 '27년 1세대1주택 거주 — 기본공제 14억, FMV 70%", () => {
   const r = calculateComprehensiveRealEstateTax({
@@ -804,7 +816,7 @@ test("종부세 JR1: 개편안 '27년 1세대1주택 거주 — 기본공제 14�
   // 3억×0.5% = 150만 + 1.2억×0.7% = 84만 → 234만
   assert.equal(r.grossTax, 2340000);
   assert.equal(r.finalTax, 2808000);
-  assert.equal(r.rateTableFromCurrent, true);   // 가액기준 세율표는 첨부 자료 미수록
+  // 6억 이하 구간(0.5%·0.7%)은 개편안에서도 현행과 같아 세액이 변하지 않는다.
 });
 
 test("종부세 JR2: 개편안 '28년 3주택 조정대상지역 — FMV 80%, 기본공제 4억", () => {
@@ -816,9 +828,10 @@ test("종부세 JR2: 개편안 '28년 3주택 조정대상지역 — FMV 80%, �
   assert.equal(r.usesHeavyRatio, true);
   assert.equal(r.fairMarketRatio, 0.8);
   assert.equal(r.taxBase, 2080000000);          // (30억 − 4억) × 80%
-  // 3억×0.5% + 3억×0.7% + 6억×1.0% + 8.8억×2.0% = 150+210+600+1,760만 = 2,720만
-  assert.equal(r.grossTax, 27200000);
-  assert.equal(r.finalTax, 32640000);           // 2,720만 + 농특세 544만
+  // '28년 일원화표: 3억×0.5% + 3억×0.7% + 6억×1.3% + 8.8억×2.0%
+  //               = 150 + 210 + 780 + 1,760만 = 2,900만
+  assert.equal(r.grossTax, 29000000);
+  assert.equal(r.finalTax, 34800000);           // 2,900만 + 농특세 580만
 });
 
 test("종부세 JR3: 개편안 '27년 1세대1주택 비거주 — 기본공제 9억으로 축소", () => {
@@ -828,9 +841,10 @@ test("종부세 JR3: 개편안 '27년 1세대1주택 비거주 — 기본공제 
   });
   assert.equal(r.basicDeduction, 9 * 억);
   assert.equal(r.taxBase, 770000000);           // (20억 − 9억) × 70%
-  // 3억×0.5% + 3억×0.7% + 1.7억×1.0% = 150+210+170만 = 530만
-  assert.equal(r.grossTax, 5300000);
-  assert.equal(r.finalTax, 6360000);
+  // '27년 2주택 이하: 3억×0.5% + 3억×0.7% + 1.7억×1.3% = 150+210+221만 = 581만
+  //   6~12억 구간이 1.0% → 1.3% 로 올라 현행 대비 51만원 늘었다.
+  assert.equal(r.grossTax, 5810000);
+  assert.equal(r.finalTax, 6972000);            // 581만 + 농특세 116.2만
 });
 
 test("종부세 JR4: 개편안 — 세액공제 기준이 보유기간에서 거주기간으로 전환", () => {
@@ -857,9 +871,9 @@ test("종부세 JR5: 개편안 다주택 기본공제 = 4억 + 5억 × 거주비
   assert.equal(r.usesHeavyRatio, false);        // 3주택 미만·비조정 → 70%
   assert.equal(r.fairMarketRatio, 0.7);
   assert.equal(r.taxBase, 910000000);
-  // 3억×0.5% + 3억×0.7% + 3.1억×1.0% = 150+210+310만 = 670만
-  assert.equal(r.grossTax, 6700000);
-  assert.equal(r.finalTax, 8040000);
+  // '28년 일원화표: 3억×0.5% + 3억×0.7% + 3.1억×1.3% = 150+210+403만 = 763만
+  assert.equal(r.grossTax, 7630000);
+  assert.equal(r.finalTax, 9156000);            // 763만 + 농특세 152.6만
 });
 
 test("종부세 JR6: 개편안 '28년 세액공제 금액 한도 600만원이 적용된다", () => {
@@ -868,13 +882,42 @@ test("종부세 JR6: 개편안 '28년 세액공제 금액 한도 600만원이 �
     ownerAge: 70, livingYears: 15, basis: '2026개편안', basisYear: '2028',
   });
   assert.equal(r.taxBase, 4620000000);          // (80억 − 14억) × 70%
-  // 150+210+600+1,690+3,180만 = 5,830만
-  assert.equal(r.grossTax, 58300000);
-  assert.equal(r.creditRate, 0.8);              // 공제율로는 4,664만이나
+  // '28년 일원화표: 3억×0.5% + 3억×0.7% + 6억×1.3% + 13억×2.0% + 21.2억×3.0%
+  //               = 150 + 210 + 780 + 2,600 + 6,360만 = 1억 100만
+  assert.equal(r.grossTax, 101000000);
+  assert.equal(r.creditRate, 0.8);              // 공제율로는 8,080만이나
   assert.equal(r.creditAmount, 6000000);        // 금액 한도 600만원으로 절하
   assert.equal(r.isCreditCapped, true);
-  assert.equal(r.calculatedTax, 52300000);
-  assert.equal(r.finalTax, 62760000);
+  assert.equal(r.calculatedTax, 95000000);
+  assert.equal(r.finalTax, 114000000);          // 9,500만 + 농특세 1,900만
+});
+
+test("종부세 JR7: 개편안 '27년은 보유공제(거주공제의 1/2)와 거주공제 중 높은 쪽을 쓴다", () => {
+  // 보유 15년·거주 0년 — 거주공제만 보면 0%지만, '27년은 보유공제 25%가 살아 있다.
+  const r = calculateComprehensiveRealEstateTax({
+    publicPrice: 20 * 억, numHouses: 1, isSingleHouse: true, isResident: true,
+    ownerAge: 0, holdingYears: 15, livingYears: 0,
+    basis: '2026개편안', basisYear: '2027',
+  });
+  assert.equal(r.grossTax, 2340000);            // 과세표준 4.2억 → 150+84만
+  assert.equal(r.holdingCreditRate, 0.25);      // 거주공제 50%의 1/2
+  assert.equal(r.creditRate, 0.25);             // 연령공제 없음
+  assert.equal(r.creditAmount, 585000);         // 234만 × 25%
+  assert.equal(r.calculatedTax, 1755000);
+  assert.equal(r.finalTax, 2106000);            // 175.5만 + 농특세 35.1만
+});
+
+test("종부세 JR8: 개편안 '28년 이후는 거주공제만 적용해 보유기간이 소용없다", () => {
+  // JR7과 같은 입력. 연도만 '28로 바꾸면 보유 15년이 공제로 이어지지 않는다.
+  const r = calculateComprehensiveRealEstateTax({
+    publicPrice: 20 * 억, numHouses: 1, isSingleHouse: true, isResident: true,
+    ownerAge: 0, holdingYears: 15, livingYears: 0,
+    basis: '2026개편안', basisYear: '2028',
+  });
+  assert.equal(r.grossTax, 2340000);
+  assert.equal(r.holdingCreditRate, 0);         // 거주 0년 → 공제 없음
+  assert.equal(r.creditAmount, 0);
+  assert.equal(r.finalTax, 2808000);            // JR1과 같아진다
 });
 
 // ══════════════════════════ 5. 가업승계 ══════════════════════════

@@ -21,6 +21,9 @@ const {
   INCOME_TAX_BRACKETS,
   JONGBU_TAX_BRACKETS_GENERAL,
   JONGBU_TAX_BRACKETS_MULTI,
+  JONGBU_TAX_BRACKETS_REFORM_2027_GENERAL,
+  JONGBU_TAX_BRACKETS_REFORM_2027_MULTI,
+  JONGBU_TAX_BRACKETS_REFORM_2028,
   calculateTieredTax,
   calculateInheritanceTax,
   calculateGiftTax,
@@ -129,6 +132,65 @@ audit('A-4', '종부세 3주택 이상 중과 세율표가 국세청 공표표�
       { upTo: 94 * 억, rate: 0.040 },
       { upTo: Infinity, rate: 0.050 },
     ]);
+  });
+
+audit('A-4R', "2026 개편안 '27년 종부세 세율표가 개편안 자료와 일치한다",
+  "기획재정부 2026 세제개편안 (5) 주택분 종합부동산세 세율 일원화 / 종부법 §9①·② — '27년은 주택수 차등을 남기되 6~12억 구간을 1.0%→1.3% 로 올리고, 12억 초과 각 구간을 인상한다", () => {
+    assert.deepEqual(JONGBU_TAX_BRACKETS_REFORM_2027_GENERAL, [
+      { upTo: 3 * 억, rate: 0.005 },
+      { upTo: 6 * 억, rate: 0.007 },
+      { upTo: 12 * 억, rate: 0.013 },
+      { upTo: 25 * 억, rate: 0.015 },
+      { upTo: 50 * 억, rate: 0.020 },
+      { upTo: 94 * 억, rate: 0.027 },
+      { upTo: Infinity, rate: 0.035 },
+    ], "'27년 2주택 이하");
+    assert.deepEqual(JONGBU_TAX_BRACKETS_REFORM_2027_MULTI, [
+      { upTo: 3 * 억, rate: 0.005 },
+      { upTo: 6 * 억, rate: 0.007 },
+      { upTo: 12 * 억, rate: 0.013 },
+      { upTo: 25 * 억, rate: 0.020 },
+      { upTo: 50 * 억, rate: 0.030 },
+      { upTo: 94 * 억, rate: 0.040 },
+      { upTo: Infinity, rate: 0.050 },
+    ], "'27년 3주택 이상");
+    // 구간 경계는 현행과 같다. 경계가 흔들리면 세액이 통째로 어긋난다.
+    const 경계 = (t) => t.map((b) => b.upTo);
+    assert.deepEqual(경계(JONGBU_TAX_BRACKETS_REFORM_2027_GENERAL), 경계(JONGBU_TAX_BRACKETS_GENERAL));
+    assert.deepEqual(경계(JONGBU_TAX_BRACKETS_REFORM_2027_MULTI), 경계(JONGBU_TAX_BRACKETS_MULTI));
+  });
+
+audit('A-4S', "2026 개편안 '28년 이후 종부세 세율표가 주택수와 무관한 단일 표다",
+  "기획재정부 2026 세제개편안 (5) — '28년 이후 주택 수 기준 차등세율 폐지. 0.5 / 0.7 / 1.3 / 2.0 / 3.0 / 4.0 / 5.0%", () => {
+    assert.deepEqual(JONGBU_TAX_BRACKETS_REFORM_2028, [
+      { upTo: 3 * 억, rate: 0.005 },
+      { upTo: 6 * 억, rate: 0.007 },
+      { upTo: 12 * 억, rate: 0.013 },
+      { upTo: 25 * 억, rate: 0.020 },
+      { upTo: 50 * 억, rate: 0.030 },
+      { upTo: 94 * 억, rate: 0.040 },
+      { upTo: Infinity, rate: 0.050 },
+    ]);
+    // 차등 폐지는 표를 적어 두는 것만으로는 성립하지 않는다.
+    // 같은 과세표준이면 2주택과 3주택의 산출세액이 실제로 같아야 한다.
+    // 공정시장가액비율은 세율과 별개로 '28년에도 주택수·조정지역에 따라 갈리므로
+    // (3주택 이상 80% / 그 외 70%), 조정대상지역을 켜 양쪽을 80%로 맞추고 세율만 견준다.
+    const gross = (houses) => calculateComprehensiveRealEstateTax({
+      publicPrice: 40 * 억, numHouses: houses, isSingleHouse: false, residentRatio: 0,
+      isAdjustedArea: true, basis: '2026개편안', basisYear: '2028',
+    });
+    const 이주택 = gross(2);
+    const 삼주택 = gross(3);
+    assert.equal(이주택.taxBase, 삼주택.taxBase, '공정시장가액비율까지 같아야 비교가 성립한다');
+    assert.equal(이주택.grossTax, 삼주택.grossTax, "'28년 이후에는 주택 수로 세율이 갈리지 않는다");
+    assert.equal(삼주택.usesUnifiedRateTable, true);
+
+    // 반대로 '27년에는 아직 갈린다. 폐지 시점을 한 해 당겨 잡지 않았는지 확인한다.
+    const gross27 = (houses) => calculateComprehensiveRealEstateTax({
+      publicPrice: 40 * 억, numHouses: houses, isSingleHouse: false, residentRatio: 0,
+      isAdjustedArea: true, basis: '2026개편안', basisYear: '2027',
+    }).grossTax;
+    assert.notEqual(gross27(2), gross27(3), "'27년은 주택수 차등이 남아 있다");
   });
 
 // 세율표가 틀렸다면 세액도 틀린다. 표와 무관하게 세액 자체로 한 번 더 확인한다.
@@ -526,6 +588,38 @@ audit('D-5', '종부세 고령자·장기보유 세액공제 경계에서 공제
     assert.equal(rate(0, 10).holdingCreditRate, 0.4);
     assert.equal(rate(0, 15).holdingCreditRate, 0.5);
     assert.equal(rate(70, 15).creditRate, 0.8, '40% + 50% = 90% → 한도 80%');
+  });
+
+audit('D-5R', '2026 개편안 종부세 세액공제가 보유기간에서 거주기간으로 전환된다',
+  "기획재정부 2026 세제개편안 (6) 1세대1주택 세액공제 개편 / 종부법 §9⑤·⑧·⑨ — 거주공제 5년 20%/10년 40%/15년 50%, 보유공제는 그 1/2(10%/20%/25%), '27년은 둘 중 높은 공제율, '28년 이후는 거주공제만. 연령공제와 합계 한도 80%는 좌동", () => {
+    const at = (year, hold, live, age = 0) => calculateComprehensiveRealEstateTax({
+      publicPrice: 30 * 억, numHouses: 1, isSingleHouse: true, isResident: true,
+      ownerAge: age, holdingYears: hold, livingYears: live,
+      basis: '2026개편안', basisYear: year,
+    });
+
+    // 거주공제 — 현행 보유공제와 같은 구간·같은 공제율이다.
+    assert.equal(at('2028', 0, 4).holdingCreditRate, 0);
+    assert.equal(at('2028', 0, 5).holdingCreditRate, 0.2);
+    assert.equal(at('2028', 0, 10).holdingCreditRate, 0.4);
+    assert.equal(at('2028', 0, 15).holdingCreditRate, 0.5);
+
+    // 보유공제 = 거주공제의 1/2. '27년에만 살아 있다.
+    assert.equal(at('2027', 5, 0).holdingCreditRate, 0.1);
+    assert.equal(at('2027', 10, 0).holdingCreditRate, 0.2);
+    assert.equal(at('2027', 15, 0).holdingCreditRate, 0.25);
+
+    // '27년은 둘 중 높은 쪽. 거주 5년(20%)이 보유 15년의 1/2(25%)보다 낮으면 보유 쪽이 이긴다.
+    assert.equal(at('2027', 15, 5).holdingCreditRate, 0.25, "'27년은 높은 공제율을 적용한다");
+    assert.equal(at('2027', 0, 15).holdingCreditRate, 0.5, '거주공제가 높으면 거주공제');
+
+    // '28년 이후는 거주공제만 — 보유기간이 길어도 공제로 이어지지 않는다.
+    assert.equal(at('2028', 15, 0).holdingCreditRate, 0, "'28년 이후 보유공제는 폐지된다");
+    assert.equal(at('2028', 15, 0).usesResidenceCreditOnly, true);
+
+    // 연령공제는 좌동이고, 합계 한도 80%도 그대로다.
+    assert.equal(at('2028', 0, 0, 70).ageCreditRate, 0.4);
+    assert.equal(at('2028', 0, 15, 70).creditRate, 0.8, '40% + 50% = 90% → 한도 80%');
   });
 
 // ══════════════════════════ E. 미구현 항목 노출 ══════════════════════════
