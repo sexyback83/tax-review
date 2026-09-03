@@ -452,9 +452,10 @@ const JONGBU_DEDUCTION_REFORM_SINGLE_RESIDENT = 14 * 억;
 // 자료 「③ 적용 사례」 — 1세대1주택자 특례: 거주시 14억, 비거주시 12억.
 const JONGBU_DEDUCTION_REFORM_SINGLE_NONRESIDENT = 12 * 억;
 const JONGBU_DEDUCTION_REFORM_GENERAL_BASE = 4 * 억;        // 정액 기본
-// 거주비중으로 안분되는 5억원. 비중은 공시가격이 아니라 **주택 수** 기준이다 —
-// 자료 적용 사례가 2주택 1채 거주 = 4억 + (5억 × 1/2), 3주택 1채 거주 = 4억 + (5억 × 1/3)으로
-// 못박고 있다. 공시가격 비중으로 잡으면 채마다 가격이 다를 때 공제액이 어긋난다.
+// 거주비중으로 안분되는 5억원. 비중은 **거주주택 공시가격 ÷ 주택 공시가격 합계**다.
+// 개편안 자료의 적용 사례(2주택 1채 거주 = 4억 + 5억 × 1/2, 3주택 1채 거주 = 4억 + 5억 × 1/3)는
+// 채마다 공시가격이 같은 예라 주택 수로 읽어도 같은 값이 나와 기준을 가리지 못한다.
+// 채마다 가격이 다르면 값이 갈리며, 그 경우를 calc.test.js JR12 가 고정하고 있다.
 const JONGBU_DEDUCTION_REFORM_GENERAL_RESIDENCE = 5 * 억;
 // 2026 개편안 §4.2 — 공정시장가액비율 상향. '28년 80%는 3주택 이상·조정대상지역에 한하고
 // 1세대1주택은 제외된다. 그 외는 70%까지.
@@ -483,7 +484,7 @@ function calculateComprehensiveRealEstateTax({
   basis = BASIS_CURRENT,
   basisYear = BASIS_YEAR_2027,
   isResident = true,       // 개편안 — 1세대1주택 거주 여부로 기본공제가 갈린다
-  residentHouses = 0,      // 개편안 — 다주택 기본공제 중 5억원을 안분할 「거주 중인 주택 수」
+  residentRatio = 0,       // 개편안 — 다주택 기본공제 중 5억원의 거주비중 안분율(%)
   livingYears = 0,         // 개편안 — 세액공제가 보유기간에서 거주기간으로 전환
   isAdjustedArea = false,  // 개편안 — '28년 공정시장가액비율 80% 판정
 }) {
@@ -497,9 +498,9 @@ function calculateComprehensiveRealEstateTax({
   const singleHouseSuppressed = isSingleHouse && numHouses > 1;
   const treatAsSingleHouse = isSingleHouse && !singleHouseSuppressed;
 
-  // 거주 주택 수 ÷ 전체 주택 수. 주택 수가 0으로 들어오면 나눗셈이 무너지므로 1로 본다.
-  const houseCount = Math.max(1, numHouses);
-  const residenceShare = Math.min(houseCount, Math.max(0, residentHouses)) / houseCount;
+  // 거주주택 공시가격 ÷ 주택 공시가격 합계. 화면이 넘겨준 %를 비율로 되돌린다.
+  // 100%를 넘거나 음수인 값은 잘라 낸다 — 거주주택이 합계보다 클 수는 없다.
+  const residenceShare = Math.min(100, Math.max(0, residentRatio)) / 100;
 
   const basicDeduction = !isReform
     ? (treatAsSingleHouse ? JONGBU_DEDUCTION_SINGLE : JONGBU_DEDUCTION_GENERAL)

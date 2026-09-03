@@ -241,7 +241,7 @@ const COMMANDS = {
       '--basis reform         2026 개편안 적용 (기본 현행)',
       '--year 2027|2028|2029  개편안 적용 연도',
       '--no-resident          해당 주택 미거주',
-      '--resident-houses N    거주 중인 주택 수 (개편안 다주택 기본공제 안분. 0 또는 1)',
+      '--resident-ratio N     거주비중(%) — 거주주택 공시가격 ÷ 주택 공시가격 합계',
       '--live N               거주기간(년)',
       '--adjusted             조정대상지역',
     ],
@@ -250,10 +250,7 @@ const COMMANDS = {
         publicPrice: won(f, 'pub'), numHouses: num(f, 'houses', 1),
         isSingleHouse: on(f, 'single', true), ownerAge: num(f, 'age', 0),
         holdingYears: num(f, 'hold', 0), propertyTaxPaid: won(f, 'ptax'),
-        isResident: on(f, 'resident', true),
-        // 개편안 다주택 기본공제는 거주 주택 수로 안분한다. 미지정이면 거주 여부를 따른다.
-        residentHouses: f['resident-houses'] !== undefined
-          ? num(f, 'resident-houses', 0) : (on(f, 'resident', true) ? 1 : 0),
+        isResident: on(f, 'resident', true), residentRatio: num(f, 'resident-ratio', 0),
         livingYears: num(f, 'live', 0), isAdjustedArea: on(f, 'adjusted', false),
       }, basisOf(f)));
       print('종합부동산세', [
