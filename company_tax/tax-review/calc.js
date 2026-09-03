@@ -449,13 +449,21 @@ const RURAL_TAX_RATE = 0.2;                // 농어촌특별세
 
 // 2026 개편안 §4.2 — 기본공제금액 조정
 const JONGBU_DEDUCTION_REFORM_SINGLE_RESIDENT = 14 * 억;
-const JONGBU_DEDUCTION_REFORM_SINGLE_NONRESIDENT = 9 * 억;
+// 자료 「③ 적용 사례」 — 1세대1주택자 특례: 거주시 14억, 비거주시 12억.
+const JONGBU_DEDUCTION_REFORM_SINGLE_NONRESIDENT = 12 * 억;
 const JONGBU_DEDUCTION_REFORM_GENERAL_BASE = 4 * 억;        // 정액 기본
-const JONGBU_DEDUCTION_REFORM_GENERAL_RESIDENCE = 5 * 억;   // 거주비중 안분분
+// 거주비중으로 안분되는 5억원. 비중은 공시가격이 아니라 **주택 수** 기준이다 —
+// 자료 적용 사례가 2주택 1채 거주 = 4억 + (5억 × 1/2), 3주택 1채 거주 = 4억 + (5억 × 1/3)으로
+// 못박고 있다. 공시가격 비중으로 잡으면 채마다 가격이 다를 때 공제액이 어긋난다.
+const JONGBU_DEDUCTION_REFORM_GENERAL_RESIDENCE = 5 * 억;
 // 2026 개편안 §4.2 — 공정시장가액비율 상향. '28년 80%는 3주택 이상·조정대상지역에 한하고
 // 1세대1주택은 제외된다. 그 외는 70%까지.
 const FAIR_MARKET_RATIO_REFORM = { [BASIS_YEAR_2027]: 0.7, [BASIS_YEAR_2028]: 0.7 };
 const FAIR_MARKET_RATIO_REFORM_HEAVY = { [BASIS_YEAR_2027]: 0.7, [BASIS_YEAR_2028]: 0.8 };
+// 세부담상한 — 직전연도 총 보유세상당액(재산세 + 종부세)의 150% (종부법 제10조·제15조).
+// 개편안도 같다. 당초 정부안 200%였으나 150%로 수정돼 현행과 같아졌다.
+// 이 도구는 직전연도 재산세·종부세를 입력받지 않으므로 상한 적용 자체를 계산하지 않는다.
+const JONGBU_BURDEN_CAP_RATE = 1.5;
 // 2026 개편안 §4.2 — 1세대1주택 세액공제 금액 한도 신설
 const JONGBU_CREDIT_AMOUNT_CAP_REFORM = { [BASIS_YEAR_2027]: 800 * 만, [BASIS_YEAR_2028]: 600 * 만 };
 // 2026 개편안 §(6) — 보유기간 세액공제를 거주기간 세액공제로 전환 (종부법 제9조 제5항·제8항·제9항)
@@ -475,7 +483,7 @@ function calculateComprehensiveRealEstateTax({
   basis = BASIS_CURRENT,
   basisYear = BASIS_YEAR_2027,
   isResident = true,       // 개편안 — 1세대1주택 거주 여부로 기본공제가 갈린다
-  residentRatio = 0,       // 개편안 — 다주택 기본공제 중 5억원의 거주비중 안분율(%)
+  residentHouses = 0,      // 개편안 — 다주택 기본공제 중 5억원을 안분할 「거주 중인 주택 수」
   livingYears = 0,         // 개편안 — 세액공제가 보유기간에서 거주기간으로 전환
   isAdjustedArea = false,  // 개편안 — '28년 공정시장가액비율 80% 판정
 }) {
@@ -489,12 +497,16 @@ function calculateComprehensiveRealEstateTax({
   const singleHouseSuppressed = isSingleHouse && numHouses > 1;
   const treatAsSingleHouse = isSingleHouse && !singleHouseSuppressed;
 
+  // 거주 주택 수 ÷ 전체 주택 수. 주택 수가 0으로 들어오면 나눗셈이 무너지므로 1로 본다.
+  const houseCount = Math.max(1, numHouses);
+  const residenceShare = Math.min(houseCount, Math.max(0, residentHouses)) / houseCount;
+
   const basicDeduction = !isReform
     ? (treatAsSingleHouse ? JONGBU_DEDUCTION_SINGLE : JONGBU_DEDUCTION_GENERAL)
     : treatAsSingleHouse
       ? (isResident ? JONGBU_DEDUCTION_REFORM_SINGLE_RESIDENT : JONGBU_DEDUCTION_REFORM_SINGLE_NONRESIDENT)
       : JONGBU_DEDUCTION_REFORM_GENERAL_BASE
-        + JONGBU_DEDUCTION_REFORM_GENERAL_RESIDENCE * Math.min(100, Math.max(0, residentRatio)) / 100;
+        + JONGBU_DEDUCTION_REFORM_GENERAL_RESIDENCE * residenceShare;
 
   const usesHeavyRatio = isReform && !treatAsSingleHouse && (isMultiHouse || isAdjustedArea);
   const fairMarketRatio = !isReform ? FAIR_MARKET_RATIO
@@ -560,7 +572,10 @@ function calculateComprehensiveRealEstateTax({
     // 개편안 '28년 이후는 주택수 차등이 폐지돼 다주택도 같은 세율표를 쓴다.
     usesUnifiedRateTable: isReform && !isFirstReformYear,
     usesResidenceCreditOnly: isReform && !isFirstReformYear,
-    burdenCapNotApplied: isReform,   // 세부담상한 150%→200% 전환은 전년 세액 정보가 필요해 미적용
+    residenceShare,
+    // 세부담상한은 현행·개편안 모두 150%다. 직전연도 보유세를 입력받지 않아 적용하지 않는다.
+    burdenCapRate: JONGBU_BURDEN_CAP_RATE,
+    burdenCapNotApplied: true,
     grossTax: Math.round(grossTax),
     ageCreditRate,
     holdingCreditRate,
@@ -1264,6 +1279,7 @@ if (typeof module !== 'undefined' && module.exports) {
     JONGBU_TAX_BRACKETS_REFORM_2027_MULTI,
     JONGBU_TAX_BRACKETS_REFORM_2028,
     JONGBU_HOLDING_CREDIT_REFORM_RATIO,
+    JONGBU_BURDEN_CAP_RATE,
     TRANSFER_SURCHARGE_OPTIONS,
     ONE_HOUSE_EXEMPT_LIMIT,
     CORPORATE_TAX_RATE_OPTIONS,

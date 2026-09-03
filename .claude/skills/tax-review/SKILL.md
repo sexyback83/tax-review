@@ -56,10 +56,10 @@ node .claude/skills/tax-review/scripts/tax.js fp 37.4979 127.0276
 
 | 명령 | 통과 기준 |
 |---|---|
-| `node calc.test.js` | PASS 126 / FAIL 0 |
+| `node calc.test.js` | PASS 131 / FAIL 0 |
 | `node succession-industry.test.js` | PASS 7 / FAIL 0 |
 | `node fp.test.js` | 253개 단언 통과 |
-| `node audit.test.js` | 통과 39건 / 범위 제외 1건 / 결함 0건 |
+| `node audit.test.js` | 통과 41건 / 범위 제외 1건 / 결함 0건 |
 | `node oracle/calc.test.js` | 26건 PASS |
 | `node oracle/fixture-check.js` | 43 passed, 0 failed |
 | `node oracle/crosscheck-run.js` | 400 cases, 2,400 values, 0 mismatched |

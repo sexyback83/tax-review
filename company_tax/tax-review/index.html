@@ -958,37 +958,26 @@ const ITEMS = [
         // 다주택이면 이 공제 자체가 없으므로 '예'를 열어 두면 의미 없는 선택이 된다.
         disabledOpts: (g) => (g.num('houses') > 1 ? ['예'] : []),
         hint: (g) => (g.num('houses') > 1
-          ? [g.num('houses') + '채 보유 — 다주택은 1세대1주택 기본공제 대상이 아니므로 「아니오」로 고정됩니다.',
-            '다주택의 개편안 기본공제는 아래 「거주비중」으로 계산합니다 (4억원 + 5억원 × 거주비중).']
+          ? [g.num('houses') + '채 보유 — 다주택은 1세대1주택 기본공제 대상이 아닙니다.',
+            '보유 주택 중 한 채에 거주하면 「예」로 두세요. 개편안 기본공제가 '
+              + W(JONGBU_DEDUCTION_REFORM_GENERAL_BASE) + ' + ' + W(JONGBU_DEDUCTION_REFORM_GENERAL_RESIDENCE)
+              + ' × (거주 주택수 ÷ ' + g.num('houses') + '채) 로 늘어납니다.']
           : ['개편안 1세대1주택 기본공제 판정 기준입니다.',
-            '거주 14억원 / 비거주 9억원 — 1주택이라도 거주하지 않으면 9억원으로 줄어듭니다.']),
+            '거주 ' + W(JONGBU_DEDUCTION_REFORM_SINGLE_RESIDENT) + ' / 비거주 '
+              + W(JONGBU_DEDUCTION_REFORM_SINGLE_NONRESIDENT) + ' — 1주택이라도 거주하지 않으면 줄어듭니다.']),
       },
       { k: 'liveYears', label: '거주기간', unit: '년', adv: true, hint: '개편안 세액공제는 보유기간이 아니라 거주기간 기준' },
       {
-        // 개편안 다주택 기본공제의 거주비중. 비중을 직접 받는 대신 거주주택 공시가격을 받고
-        // 위 「주택 공시가격 합계」로 나눠 자동 산출한다 — 상담 현장에서 비중을 손으로 계산하지 않게.
-        k: 'residentPub', label: '거주주택 공시가격', unit: '만원', adv: true,
-        hint: (g) => (g.num('houses') <= 1
-          ? ['1주택은 거주비중을 쓰지 않습니다 — 위 「해당 주택 거주」로 판정합니다 (14억원 / 9억원).']
-          : [
-            '보유 주택 중 실제 거주하는 주택의 공시가격입니다.',
-            '개편안 다주택 기본공제 = 4억원 + 5억원 × 거주비중 (거주주택 공시가격 ÷ 주택 공시가격 합계)',
-            '비워두면 거주비중 0%로 보아 기본공제 4억원만 적용합니다.',
-          ]),
-      },
-      {
+        // 개편안 다주택 기본공제의 거주비중은 주택 수로 정해진다 (거주 주택수 ÷ 전체 주택수).
+        // 거주주택 공시가격·비중 입력란은 자료 확정으로 쓸모가 없어졌으므로 두지 않는다.
         k: 'residentRatioShown', label: '거주비중 (자동)', type: 'readonly', unit: '%', adv: true,
-        value: (g) => (g.won('pub') > 0
-          ? (Math.min(1, g.won('residentPub') / g.won('pub')) * 100).toFixed(1) : ''),
-        hint: (g) => {
-          const pub = g.won('pub');
-          const res = g.won('residentPub');
-          if (pub === 0) return ['주택 공시가격 합계를 먼저 입력하세요.'];
-          if (res > pub) {
-            return ['거주주택 공시가격이 합계를 넘습니다 — 비중을 100%로 봅니다. 두 값을 확인해 주세요.'];
-          }
-          return ['거주주택 ' + W(res) + ' ÷ 합계 ' + W(pub)];
-        },
+        value: (g) => (g.num('houses') > 1
+          ? ((g.pick('resident') === '예' ? 1 : 0) / g.num('houses') * 100).toFixed(1) : ''),
+        hint: (g) => (g.num('houses') <= 1
+          ? ['1주택은 거주비중을 쓰지 않습니다 — 위 「해당 주택 거주」로 판정합니다.']
+          : ['개편안 다주택 기본공제 = ' + W(JONGBU_DEDUCTION_REFORM_GENERAL_BASE) + ' + '
+            + W(JONGBU_DEDUCTION_REFORM_GENERAL_RESIDENCE) + ' × (거주 주택수 ÷ 전체 주택수)',
+            '거주 ' + (g.pick('resident') === '예' ? '1' : '0') + '채 ÷ ' + g.num('houses') + '채']),
       },
       { k: 'adjusted', label: '조정대상지역', type: 'choice', opts: ['아니오', '예'], def: '아니오', adv: true, hint: '개편안 2028년 공정시장가액비율 80% 판정' },
     ],
@@ -998,11 +987,10 @@ const ITEMS = [
       const base = {
         publicPrice: g.won('pub'), numHouses: g.num('houses'), isSingleHouse: single,
         ownerAge: g.num('ownerAge'), holdingYears: g.num('hold'), propertyTaxPaid: g.won('ptax'),
-        // 거주 판정은 1세대1주택 기본공제에만 쓰이므로 다주택이면 성립하지 않는다.
+        // 1세대1주택 기본공제(거주 14억 / 비거주 12억) 판정.
         isResident: single && g.pick('resident') === '예',
-        // 거주비중은 거주주택 공시가격 ÷ 주택 공시가격 합계로 산출한다 (100%를 넘지 않게 절단).
-        residentRatio: g.won('pub') > 0
-          ? Math.min(1, g.won('residentPub') / g.won('pub')) * 100 : 0,
+        // 다주택 기본공제의 안분은 거주 주택 수로 한다. 한 세대가 두 채에 거주할 수는 없어 0 또는 1이다.
+        residentHouses: !single && g.pick('resident') === '예' ? 1 : 0,
         livingYears: g.num('liveYears'), isAdjustedArea: g.pick('adjusted') === '예',
       };
       // 주 결과는 현행 기준이다.
@@ -1032,7 +1020,8 @@ const ITEMS = [
             label: year + '년 (개편안 적용)',
             value: W(x.finalTax),
             note: '기본공제 ' + W(x.basicDeduction)
-              + (single ? '' : ' (4억원 + 5억원 × 거주비중 ' + PCT(base.residentRatio / 100) + ')')
+              + (single ? '' : ' (' + W(JONGBU_DEDUCTION_REFORM_GENERAL_BASE) + ' + '
+                + W(JONGBU_DEDUCTION_REFORM_GENERAL_RESIDENCE) + ' × 거주비중 ' + PCT(x.residenceShare) + ')')
               + ' · 공정시장가액비율 ' + PCT(x.fairMarketRatio)
               + ' · 과세표준 ' + W(x.taxBase)
               + (x.creditAmount > 0
@@ -1047,7 +1036,8 @@ const ITEMS = [
         notes.push('1세대1주택 세액공제는 보유기간 기준에서 거주기간 기준으로 전환됩니다 — 2027년은 보유공제(거주공제의 '
           + PCT(JONGBU_HOLDING_CREDIT_REFORM_RATIO) + ')와 거주공제 중 높은 공제율을, 2028년 이후는 거주공제만 적용합니다.');
         notes.push('공정시장가액비율은 세율과 별개로 2028년에도 3주택 이상·조정대상지역이 더 높습니다 — 세율 차등 폐지가 비율 차등 폐지를 뜻하지 않습니다.');
-        notes.push('세부담상한 150%→200% 전환은 전년도 세액 정보가 필요해 반영하지 않았습니다.');
+        notes.push('세부담상한은 개편안에서도 현행과 같은 ' + PCT(JONGBU_BURDEN_CAP_RATE)
+          + '입니다 (당초 정부안 200%에서 수정). 직전연도 재산세·종부세를 입력받지 않으므로 이 도구는 상한 적용을 계산하지 않습니다.');
       }
       return {
         total: r.finalTax, label: '예상 종합부동산세 (현행 기준)',

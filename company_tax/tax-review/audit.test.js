@@ -24,6 +24,7 @@ const {
   JONGBU_TAX_BRACKETS_REFORM_2027_GENERAL,
   JONGBU_TAX_BRACKETS_REFORM_2027_MULTI,
   JONGBU_TAX_BRACKETS_REFORM_2028,
+  JONGBU_BURDEN_CAP_RATE,
   calculateTieredTax,
   calculateInheritanceTax,
   calculateGiftTax,
@@ -340,6 +341,55 @@ audit('B-5', '화면 계층이 채무를 과세가액과 순금융재산에 이�
     assert.ok(!doubled,
       "index.html이 debt와 financialDebt에 같은 필드('debt')를 넘긴다. "
       + '금융채무 입력란이 없어 임대보증금·부동산 담보대출을 넣으면 금융재산상속공제가 함께 줄어든다.');
+  });
+
+audit('A-9R', '2026 개편안 종부세 기본공제가 자료의 적용 사례와 일치한다',
+  '기획재정부 2026 세제개편안 「주택분 종합부동산세 과세대상 및 기본공제금액 조정 — ③ 적용 사례」 — 1세대1주택자 특례 거주 14억/비거주 12억, 다주택은 4억 + 5억 × (거주 주택수 ÷ 전체 주택수)', () => {
+    const ded = (houses, residentHouses, single, isResident) =>
+      calculateComprehensiveRealEstateTax({
+        publicPrice: 30 * 억, numHouses: houses, isSingleHouse: single,
+        isResident: isResident, residentHouses: residentHouses,
+        basis: '2026개편안', basisYear: '2027',
+      }).basicDeduction;
+
+    // 1세대1주택자 특례 — 거주 14억 / 비거주 12억
+    assert.equal(ded(1, 0, true, true), 14 * 억, '1주택 거주');
+    assert.equal(ded(1, 0, true, false), 12 * 억, '1주택 비거주');
+
+    // 자료 적용 사례 — 2주택자(각 10억) 중 1채 거주 = 4억 + (5억 × 1/2) = 6.5억
+    assert.equal(ded(2, 1, false, false), 6.5 * 억, '2주택 1채 거주');
+    // 3주택자(각 10억) 중 1채 거주 = 4억 + (5억 × 1/3) ≒ 5.7억
+    assert.equal(Math.round(ded(3, 1, false, false)), 566666667, '3주택 1채 거주');
+    // 소유 주택에 거주하지 않으면 4억
+    assert.equal(ded(2, 0, false, false), 4 * 억, '2주택 비거주');
+    assert.equal(ded(3, 0, false, false), 4 * 억, '3주택 비거주');
+
+    // 안분 기준이 주택 수라는 것 자체를 고정한다.
+    // 공시가격 비중이었다면 채마다 가격이 다를 때 값이 갈린다 — 같은 주택 수면 공시가격과 무관해야 한다.
+    assert.equal(
+      calculateComprehensiveRealEstateTax({
+        publicPrice: 20 * 억, numHouses: 2, isSingleHouse: false, residentHouses: 1,
+        basis: '2026개편안', basisYear: '2027',
+      }).basicDeduction,
+      calculateComprehensiveRealEstateTax({
+        publicPrice: 90 * 억, numHouses: 2, isSingleHouse: false, residentHouses: 1,
+        basis: '2026개편안', basisYear: '2027',
+      }).basicDeduction,
+      '기본공제는 공시가격이 아니라 주택 수로 안분한다');
+  });
+
+audit('A-9S', '종부세 세부담상한이 현행·개편안 모두 150%다',
+  '종합부동산세법 제10조·제15조 — 직전연도 총 보유세상당액(재산세 + 종부세)의 150%. 2026 세제개편안은 당초 정부안 200%에서 150%로 수정돼 현행과 같아졌다', () => {
+    assert.equal(JONGBU_BURDEN_CAP_RATE, 1.5);
+    // 이 도구는 직전연도 보유세를 입력받지 않아 상한을 적용하지 않는다.
+    // 적용하지 않는다는 사실이 결과에 드러나야 화면이 고지할 수 있다.
+    for (const basis of ['현행', '2026개편안']) {
+      const r = calculateComprehensiveRealEstateTax({
+        publicPrice: 30 * 억, numHouses: 1, isSingleHouse: true, basis: basis, basisYear: '2028',
+      });
+      assert.equal(r.burdenCapRate, 1.5, basis + ' 세부담상한율');
+      assert.equal(r.burdenCapNotApplied, true, basis + ' 상한 미적용 고지');
+    }
   });
 
 audit('B-6', '종부세 중과 판정과 1세대1주택 기본공제가 동시에 성립하지 않는다',

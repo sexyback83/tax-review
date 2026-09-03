@@ -42,6 +42,7 @@ const {
   calculateDividendTax,
   calculateSalaryDividendCompare,
   calculateExecutiveSeveranceTax,
+  JONGBU_BURDEN_CAP_RATE,
 } = require('./calc.js');
 
 let failed = false;
@@ -789,7 +790,9 @@ test("양도세 TR5: 개편안 '28년은 한도 20억, 공제율은 첨부 자�
 });
 
 // ══════════════════════════ 3-B. 종합부동산세 — 2026 개편안 ══════════════════════════
-// 기본공제: 1주택 거주 14억 / 1주택 비거주 9억 / 그 외 4억 + 5억 × 거주비중
+// 기본공제: 1주택 거주 14억 / 1주택 비거주 12억 / 그 외 4억 + 5억 × (거주 주택수 ÷ 전체 주택수)
+//   거주비중은 공시가격이 아니라 **주택 수** 기준이다. 개편안 자료 「③ 적용 사례」가
+//   2주택 1채 거주 = 4억 + (5억 × 1/2) = 6.5억, 3주택 1채 거주 = 4억 + (5억 × 1/3) ≒ 5.7억 으로 못박았다.
 // 공정시장가액비율: '27 70% / '28 80%(3주택 이상·조정지역, 1세대1주택 제외), 그 외 70%
 // 세액공제 금액 한도: '27 800만원 / '28 600만원
 //
@@ -834,17 +837,17 @@ test("종부세 JR2: 개편안 '28년 3주택 조정대상지역 — FMV 80%, �
   assert.equal(r.finalTax, 34800000);           // 2,900만 + 농특세 580만
 });
 
-test("종부세 JR3: 개편안 '27년 1세대1주택 비거주 — 기본공제 9억으로 축소", () => {
+test("종부세 JR3: 개편안 '27년 1세대1주택 비거주 — 기본공제 12억으로 축소", () => {
   const r = calculateComprehensiveRealEstateTax({
     publicPrice: 20 * 억, numHouses: 1, isSingleHouse: true, isResident: false,
     basis: '2026개편안', basisYear: '2027',
   });
-  assert.equal(r.basicDeduction, 9 * 억);
-  assert.equal(r.taxBase, 770000000);           // (20억 − 9억) × 70%
-  // '27년 2주택 이하: 3억×0.5% + 3억×0.7% + 1.7억×1.3% = 150+210+221만 = 581만
-  //   6~12억 구간이 1.0% → 1.3% 로 올라 현행 대비 51만원 늘었다.
-  assert.equal(r.grossTax, 5810000);
-  assert.equal(r.finalTax, 6972000);            // 581만 + 농특세 116.2만
+  // 자료 「③ 적용 사례」 — 1세대1주택자 특례: 거주시 14억, 비거주시 12억.
+  assert.equal(r.basicDeduction, 12 * 억);
+  assert.equal(r.taxBase, 560000000);           // (20억 − 12억) × 70%
+  // '27년 2주택 이하: 3억×0.5% + 2.6억×0.7% = 150+182만 = 332만
+  assert.equal(r.grossTax, 3320000);
+  assert.equal(r.finalTax, 3984000);            // 332만 + 농특세 66.4만
 });
 
 test("종부세 JR4: 개편안 — 세액공제 기준이 보유기간에서 거주기간으로 전환", () => {
@@ -862,18 +865,18 @@ test("종부세 JR4: 개편안 — 세액공제 기준이 보유기간에서 거
   assert.equal(r.finalTax, 561600);
 });
 
-test("종부세 JR5: 개편안 다주택 기본공제 = 4억 + 5억 × 거주비중", () => {
+test("종부세 JR5: 개편안 다주택 기본공제 = 4억 + 5억 × (거주 주택수 ÷ 전체 주택수)", () => {
   const r = calculateComprehensiveRealEstateTax({
-    publicPrice: 20 * 억, numHouses: 2, isSingleHouse: false, residentRatio: 60,
+    publicPrice: 20 * 억, numHouses: 2, isSingleHouse: false, residentHouses: 1,
     isAdjustedArea: false, basis: '2026개편안', basisYear: '2028',
   });
-  assert.equal(r.basicDeduction, 7 * 억);       // 4억 + 5억 × 60%
+  assert.equal(r.basicDeduction, 6.5 * 억);     // 4억 + 5억 × 1/2 (자료 적용 사례)
   assert.equal(r.usesHeavyRatio, false);        // 3주택 미만·비조정 → 70%
   assert.equal(r.fairMarketRatio, 0.7);
-  assert.equal(r.taxBase, 910000000);
-  // '28년 일원화표: 3억×0.5% + 3억×0.7% + 3.1억×1.3% = 150+210+403만 = 763만
-  assert.equal(r.grossTax, 7630000);
-  assert.equal(r.finalTax, 9156000);            // 763만 + 농특세 152.6만
+  assert.equal(r.taxBase, 945000000);           // (20억 − 6.5억) × 70%
+  // '28년 일원화표: 3억×0.5% + 3억×0.7% + 3.45억×1.3% = 150+210+448.5만 = 808.5만
+  assert.equal(r.grossTax, 8085000);
+  assert.equal(r.finalTax, 9702000);            // 808.5만 + 농특세 161.7만
 });
 
 test("종부세 JR6: 개편안 '28년 세액공제 금액 한도 600만원이 적용된다", () => {
@@ -921,6 +924,65 @@ test("종부세 JR8: 개편안 '28년 이후는 거주공제만 적용해 보유
   assert.equal(r.creditFromHoldingYears, false); // '28년 이후는 언제나 거주기간 기준
   assert.equal(r.creditAmount, 0);
   assert.equal(r.finalTax, 2808000);            // JR1과 같아진다
+});
+
+// 개편안 자료 「③ 적용 사례」를 그대로 옮긴 대조표.
+// 공시가격이 채마다 같은 사례라 공시가격 비중으로 계산해도 우연히 같은 값이 나온다.
+// 그래서 값이 갈리는 사례(JR11)를 따로 둔다 — 여기서 두 해석이 갈린다.
+test('종부세 JR9: 자료 적용 사례 — 2주택자(각 10억) 중 1채 거주 → 공제 6.5억', () => {
+  const r = calculateComprehensiveRealEstateTax({
+    publicPrice: 20 * 억, numHouses: 2, isSingleHouse: false, residentHouses: 1,
+    basis: '2026개편안', basisYear: '2027',
+  });
+  assert.equal(r.basicDeduction, 6.5 * 억);     // 4억 + (5억 × 1/2)
+});
+
+test('종부세 JR10: 자료 적용 사례 — 소유 주택에 거주하지 않으면 공제 4억', () => {
+  const r2 = calculateComprehensiveRealEstateTax({
+    publicPrice: 20 * 억, numHouses: 2, isSingleHouse: false, residentHouses: 0,
+    basis: '2026개편안', basisYear: '2027',
+  });
+  const r3 = calculateComprehensiveRealEstateTax({
+    publicPrice: 30 * 억, numHouses: 3, isSingleHouse: false, residentHouses: 0,
+    basis: '2026개편안', basisYear: '2027',
+  });
+  assert.equal(r2.basicDeduction, 4 * 억);
+  assert.equal(r3.basicDeduction, 4 * 억);
+});
+
+test('종부세 JR11: 자료 적용 사례 — 3주택자(각 10억) 중 1채 거주 → 공제 약 5.7억', () => {
+  const r = calculateComprehensiveRealEstateTax({
+    publicPrice: 30 * 억, numHouses: 3, isSingleHouse: false, residentHouses: 1,
+    basis: '2026개편안', basisYear: '2027',
+  });
+  // 4억 + (5억 × 1/3) = 5억 6,666만 6,667원. 자료 표기는 「약 5.7억원」이다.
+  assert.equal(Math.round(r.basicDeduction), 566666667);
+  // 공시가격 비중으로 잘못 계산하면 10억 ÷ 30억 = 33.3% 로 같은 값이 나와 구분되지 않는다.
+  // 값이 갈리는 것은 채마다 가격이 다를 때다 — JR12 가 그 경우다.
+});
+
+test('종부세 JR12: 거주비중은 공시가격이 아니라 주택 수로 본다', () => {
+  // 거주 주택 5억 + 비거주 주택 15억 = 합계 20억, 2주택 중 1채 거주.
+  // 주택 수 기준 → 4억 + 5억 × 1/2 = 6.5억
+  // 공시가격 비중이었다면 → 4억 + 5억 × (5억/20억) = 5.25억 이 되어 1.25억 차이가 난다.
+  const r = calculateComprehensiveRealEstateTax({
+    publicPrice: 20 * 억, numHouses: 2, isSingleHouse: false, residentHouses: 1,
+    basis: '2026개편안', basisYear: '2027',
+  });
+  assert.equal(r.basicDeduction, 6.5 * 억);
+  assert.notEqual(r.basicDeduction, 5.25 * 억);
+});
+
+test('종부세 JR13: 세부담상한은 개편안에서도 현행과 같은 150%다', () => {
+  // 자료: 당초 정부안 200% → 150% 로 수정. 현행과 같아졌다.
+  // 이 도구는 직전연도 재산세·종부세를 입력받지 않아 상한 적용 자체를 계산하지 않는다.
+  assert.equal(JONGBU_BURDEN_CAP_RATE, 1.5);
+  const r = calculateComprehensiveRealEstateTax({
+    publicPrice: 30 * 억, numHouses: 1, isSingleHouse: true,
+    basis: '2026개편안', basisYear: '2028',
+  });
+  assert.equal(r.burdenCapRate, 1.5);
+  assert.equal(r.burdenCapNotApplied, true);
 });
 
 // ══════════════════════════ 5. 가업승계 ══════════════════════════
