@@ -462,7 +462,7 @@ const JONGBU_DEDUCTION_REFORM_GENERAL_RESIDENCE = 5 * 억;
 const FAIR_MARKET_RATIO_REFORM = { [BASIS_YEAR_2027]: 0.7, [BASIS_YEAR_2028]: 0.7 };
 const FAIR_MARKET_RATIO_REFORM_HEAVY = { [BASIS_YEAR_2027]: 0.7, [BASIS_YEAR_2028]: 0.8 };
 // 세부담상한 — 직전연도 총 보유세상당액(재산세 + 종부세)의 150% (종부법 제10조·제15조).
-// 개편안도 같다. 당초 정부안 200%였으나 150%로 수정돼 현행과 같아졌다.
+// 2026 개편안도 같은 150%다 — 상한은 현행과 달라지지 않는다.
 // 이 도구는 직전연도 재산세·종부세를 입력받지 않으므로 상한 적용 자체를 계산하지 않는다.
 const JONGBU_BURDEN_CAP_RATE = 1.5;
 // 2026 개편안 §4.2 — 1세대1주택 세액공제 금액 한도 신설
