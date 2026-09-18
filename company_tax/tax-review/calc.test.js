@@ -30,6 +30,9 @@ const {
   calculateSecondaryInheritance,
   calculateGiftTax,
   calculateComprehensiveRealEstateTax,
+  calculateJointJongbu,
+  JOINT_ROUTE_SHARE,
+  JOINT_ROUTE_SPECIAL,
   calculateTransferIncomeTax,
   calculateBusinessSuccession,
   calculateWeightedNetIncome,
@@ -989,6 +992,104 @@ test('종부세 JR13: 세부담상한은 개편안에서도 현행과 같은 150
   });
   assert.equal(r.burdenCapRate, 1.5);
   assert.equal(r.burdenCapNotApplied, true);
+});
+
+// ══════════════════════════ 3-C. 종합부동산세 — 공동명의 ══════════════════════════
+// 인별 과세다 (종부법 제7조 제1항). 공유 주택은 지분 상당액을 각자 소유한 것으로 보아
+// 각자 기본공제 9억을 받고, 공동소유는 단독소유가 아니라 1세대1주택자가 아니다(제8조 제1항).
+// 부부가 1주택만 공동소유하면 제10조의2 특례로 단독명의처럼 과세받을 수 있다.
+
+test('종부세 JO1: 지분만큼 인별로 과세한다 — 부부 50:50 공시 20억', () => {
+  const j = calculateJointJongbu({ publicPrice: 20 * 억, ownershipShare: 0.5, numHouses: 1 });
+  // 각자 지분 10억 − 기본공제 9억 = 1억 → × 60% = 6,000만 과세표준 → 0.5% = 30만
+  // 세액공제 없음(1세대1주택자 아님) → 농특세 6만 → 각자 36만
+  assert.equal(j.self.ownedPublicPrice, 10 * 억);
+  assert.equal(j.self.basicDeduction, 9 * 억);
+  assert.equal(j.self.taxBase, 60000000);
+  assert.equal(j.self.calculatedTax, 300000);
+  assert.equal(j.self.finalTax, 360000);
+  assert.equal(j.coOwner.finalTax, 360000);
+  assert.equal(j.shareRouteTotal, 720000);
+  // 같은 집을 단독명의로 가지면 12억 공제 + 2주택 이하 세율로 331만 2,000원이다 (J1).
+  // 공동명의가 유리한 구간이므로 특례를 신청할 이유가 없다.
+  assert.equal(j.route, JOINT_ROUTE_SHARE);
+  assert.equal(j.total, 720000);
+});
+
+test('종부세 JO2: 고령·장기보유면 부부 공동명의 1주택자 특례가 유리해진다', () => {
+  const input = { publicPrice: 40 * 억, ownershipShare: 0.5, numHouses: 1, ownerAge: 70, holdingYears: 16 };
+  const j = calculateJointJongbu(input);
+  // 지분 과세 — 각자 20억 − 9억 = 11억 × 60% = 6.6억
+  //   3억×0.5% + 3억×0.7% + 0.6억×1% = 150 + 210 + 60 = 420만 → 농특세 84만 → 각자 504만
+  assert.equal(j.self.taxBase, 660000000);
+  assert.equal(j.self.finalTax, 5040000);
+  assert.equal(j.shareRouteTotal, 10080000);
+  // 특례 — 40억 − 12억 = 28억 × 60% = 16.8억, 세액공제 70세 40% + 16년 50% = 90% → 한도 80%
+  assert.equal(j.special.basicDeduction, 12 * 억);
+  assert.equal(j.special.creditRate, 0.8);
+  assert.ok(j.specialTotal < j.shareRouteTotal);
+  assert.equal(j.route, JOINT_ROUTE_SPECIAL);
+  assert.equal(j.total, j.specialTotal);
+  assert.equal(j.saving, j.shareRouteTotal - j.specialTotal);
+});
+
+test('종부세 JO3: 지분율이 다르면 과세표준도 지분만큼 갈린다 (70:30)', () => {
+  const j = calculateJointJongbu({ publicPrice: 40 * 억, ownershipShare: 0.7, numHouses: 1 });
+  assert.equal(j.self.ownedPublicPrice, 28 * 억);
+  assert.equal(j.coOwner.ownedPublicPrice, 12 * 억);
+  // 지분이 큰 쪽이 납세의무자가 된다 (종부법 제10조의2)
+  assert.equal(j.isSelfTaxpayer, true);
+  assert.equal(calculateJointJongbu({ publicPrice: 40 * 억, ownershipShare: 0.3, numHouses: 1 }).isSelfTaxpayer, false);
+  // 지분을 뒤집어도 부부 합계는 같다 — 인별 누진세율이라 같은 값이 나올 이유는 없지만,
+  // 30:70과 70:30은 두 사람의 몫을 맞바꾼 것뿐이므로 합계가 일치해야 한다.
+  const flipped = calculateJointJongbu({ publicPrice: 40 * 억, ownershipShare: 0.3, numHouses: 1 });
+  assert.equal(flipped.shareRouteTotal, j.shareRouteTotal);
+});
+
+test('종부세 JO4: 배우자가 아닌 공유자는 제10조의2 특례 대상이 아니다', () => {
+  const j = calculateJointJongbu({ publicPrice: 30 * 억, ownershipShare: 0.5, numHouses: 1, isSpouseJoint: false });
+  assert.equal(j.specialAvailable, false);
+  assert.equal(j.special, null);
+  assert.equal(j.route, JOINT_ROUTE_SHARE);
+  assert.equal(j.saving, 0);
+  assert.equal(j.total, j.shareRouteTotal);
+});
+
+test('종부세 JO5: 주택이 2채 이상이면 특례 대상이 아니고 주택수별 세율을 쓴다', () => {
+  const j = calculateJointJongbu({ publicPrice: 40 * 억, ownershipShare: 0.5, numHouses: 3 });
+  assert.equal(j.specialAvailable, false);
+  assert.equal(j.self.isMultiHouse, true);
+  // 공동소유 주택도 각자 1채로 세므로 두 사람 모두 3주택 중과 대상이다
+  assert.equal(j.coOwner.isMultiHouse, true);
+});
+
+test('종부세 JO6: 단독명의 계산에는 영향이 없다 (지분 기본값 100%)', () => {
+  const solo = calculateComprehensiveRealEstateTax({ publicPrice: 20 * 억, numHouses: 1, isSingleHouse: true });
+  const explicit = calculateComprehensiveRealEstateTax({
+    publicPrice: 20 * 억, numHouses: 1, isSingleHouse: true, ownershipShare: 1,
+  });
+  assert.equal(solo.ownershipShare, 1);
+  assert.equal(solo.ownedPublicPrice, 20 * 억);
+  assert.equal(solo.finalTax, explicit.finalTax);
+  assert.equal(solo.finalTax, 3312000);   // J1과 같은 값
+});
+
+test('종부세 JO7: 개편안에서도 인별 기본공제가 적용된다', () => {
+  // 개편안 1주택 거주 — 지분 과세는 1세대1주택자가 아니므로 4억 + 5억 × 거주비중(100%) = 9억
+  const j = calculateJointJongbu({
+    publicPrice: 30 * 억, ownershipShare: 0.5, numHouses: 1, isResident: true,
+    basis: '2026개편안', basisYear: '2027',
+  });
+  assert.equal(j.self.basicDeduction, 9 * 억);
+  // 특례를 신청하면 1세대1주택자로 보아 거주 14억이 적용된다
+  assert.equal(j.special.basicDeduction, 14 * 억);
+  // 거주하지 않으면 거주비중이 0이 되어 인별 공제가 4억으로 줄어든다
+  const away = calculateJointJongbu({
+    publicPrice: 30 * 억, ownershipShare: 0.5, numHouses: 1, isResident: false,
+    basis: '2026개편안', basisYear: '2027',
+  });
+  assert.equal(away.self.basicDeduction, 4 * 억);
+  assert.equal(away.special.basicDeduction, 12 * 억);
 });
 
 // ══════════════════════════ 5. 가업승계 ══════════════════════════

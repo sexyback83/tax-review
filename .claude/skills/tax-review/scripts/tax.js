@@ -117,6 +117,35 @@ function serviceSpans(join, out) {
 
 // ══════════════════════════ 세목 ══════════════════════════
 
+// 공동명의 종부세 — 인별 과세라 「본인」과 「세대 합계」가 다르고, 부부 1주택이면
+// 제10조의2 특례와 비교해야 해서 단독명의와 출력 구성이 갈린다.
+function jongbuJoint(f) {
+  const j = calc.calculateJointJongbu(Object.assign({
+    publicPrice: won(f, 'pub'), numHouses: num(f, 'houses', 1),
+    ownershipShare: num(f, 'share', 50) / 100,
+    isSpouseJoint: on(f, 'spouse-joint', true),
+    ownerAge: num(f, 'age', 0), holdingYears: num(f, 'hold', 0), propertyTaxPaid: won(f, 'ptax'),
+    isResident: on(f, 'resident', true), residentRatio: num(f, 'resident-ratio', 0),
+    livingYears: num(f, 'live', 0), isAdjustedArea: on(f, 'adjusted', false),
+  }, basisOf(f)));
+  const r = j.self;
+  print('종합부동산세 (공동명의)', [
+    ['적용 기준', r.isReform ? '2026 개편안 · ' + r.basisYear + '년' : '현행'],
+    ['공시가격 합계', W(r.publicPrice)],
+    ['본인 지분', pct(j.ownershipShare) + ' → ' + W(r.ownedPublicPrice)],
+    ['인별 기본공제', W(r.basicDeduction) + ' (공동소유는 1세대1주택자가 아니다 — 종부법 §8①)'],
+    ['본인 과세표준', W(r.taxBase)],
+    ['본인 세액', W(r.finalTax)],
+    ['상대 공유자 세액', W(j.coOwner.finalTax) + ' (기납부 재산세 0 가정)'],
+    ['지분 과세 합계', W(j.shareRouteTotal)],
+    j.specialAvailable && ['특례 (종부법 §10의2)', W(j.specialTotal)
+      + ' — ' + (j.isSelfTaxpayer ? '본인' : '배우자') + '이 전액 부담'],
+    j.specialAvailable && ['유리한 경로', j.route + ' (' + W(j.saving) + ' 차이)'],
+    !j.specialAvailable && ['특례', '대상 아님 — 배우자 공동소유 1주택만 해당 (종부법 §10의2)'],
+    [j.specialAvailable ? '세대 합계' : '공유자 합계', W(j.total)],
+  ]);
+}
+
 const COMMANDS = {
 
   inherit: {
@@ -230,7 +259,7 @@ const COMMANDS = {
   },
 
   jongbu: {
-    desc: '종합부동산세',
+    desc: '종합부동산세 (--share 로 공동명의)',
     flags: [
       '--pub N                주택 공시가격 합계',
       '--houses N             주택 수 (기본 1)',
@@ -244,8 +273,11 @@ const COMMANDS = {
       '--resident-ratio N     거주비중(%) — 거주주택 공시가격 ÷ 주택 공시가격 합계',
       '--live N               거주기간(년)',
       '--adjusted             조정대상지역',
+      '--share N              공동명의 본인 지분율(%) — 넣으면 인별 과세로 계산한다',
+      '--no-spouse-joint      공유자가 배우자가 아님 (제10조의2 특례 대상 아님)',
     ],
     run: function (f) {
+      if (f.share !== undefined) return jongbuJoint(f);
       const r = calc.calculateComprehensiveRealEstateTax(Object.assign({
         publicPrice: won(f, 'pub'), numHouses: num(f, 'houses', 1),
         isSingleHouse: on(f, 'single', true), ownerAge: num(f, 'age', 0),
@@ -604,6 +636,26 @@ function selftest() {
   eq('V7-2 하한(순자산 80%)', man(v72.floorValue), 16);
   eq('V7-2 주당 평가액', man(v72.pricePerShare), 16);
   eq('V7-2 총액', man(v72.totalValue), 160000);
+
+  // V3-2 종부세 공동명의 — 공시 20억 · 부부 50:50 · 1주택 · 현행
+  // 각자 10억 − 9억 = 1억 → ×60% = 6,000만 → 0.5% = 30만 → 농특세 6만 → 각자 36만
+  const v32 = calc.calculateJointJongbu({ publicPrice: 20 * 억, ownershipShare: 0.5, numHouses: 1 });
+  eq('V3-2 본인 지분 상당액', man(v32.self.ownedPublicPrice), 100000);
+  eq('V3-2 인별 기본공제', man(v32.self.basicDeduction), 90000);
+  eq('V3-2 본인 과세표준', man(v32.self.taxBase), 6000);
+  eq('V3-2 본인 세액', man(v32.self.finalTax), 36);
+  eq('V3-2 지분 과세 합계', man(v32.shareRouteTotal), 72);
+  // 같은 집 단독명의는 331만 2,000원(V3)이므로 이 구간은 공동명의가 유리하다
+  eq('V3-2 유리한 경로', v32.route === calc.JOINT_ROUTE_SHARE ? 1 : 0, 1);
+
+  // V3-3 공동명의 + 고령·장기보유 — 공시 40억 · 만 70세 · 보유 16년 → 특례가 유리해진다
+  const v33 = calc.calculateJointJongbu({
+    publicPrice: 40 * 억, ownershipShare: 0.5, numHouses: 1, ownerAge: 70, holdingYears: 16,
+  });
+  eq('V3-3 지분 과세 합계', man(v33.shareRouteTotal), 1008);
+  close('V3-3 특례 세액공제율', v33.special.creditRate, 0.8);
+  eq('V3-3 특례 세액', man(v33.specialTotal), 380);
+  eq('V3-3 유리한 경로', v33.route === calc.JOINT_ROUTE_SPECIAL ? 1 : 0, 1);
 
   // V8 급여·배당 — 급여 1.2억 · 배당 3,000만원 · 4대보험 반영
   const v8 = calc.calculateSalaryDividendCompare({ salary: 1.2 * 억, dividend: 3000 * MANWON, includeInsurance: true }).withDividend;

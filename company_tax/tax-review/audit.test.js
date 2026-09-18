@@ -29,6 +29,7 @@ const {
   calculateInheritanceTax,
   calculateGiftTax,
   calculateComprehensiveRealEstateTax,
+  calculateJointJongbu,
   calculateTransferIncomeTax,
   calculateBusinessSuccession,
   calculateWeightedNetIncome,
@@ -327,6 +328,54 @@ audit('A-14', '최대주주 할증률이 20%이고, 할증 대상이 아닌 주�
     // 기본값이 할증을 붙이면 제외 대상 법인의 주식이 20% 과대평가된다.
     assert.equal(calculateUnlistedStockValue(base).premiumRate, 1,
       '할증 여부를 지정하지 않았는데 20%가 가산됐다 — 제외 대상 법인이 과대평가된다');
+  });
+
+audit('A-15', '공유 주택은 지분 상당액을 각자 소유한 것으로 보아 인별로 과세한다',
+  '종합부동산세법 제7조 제1항(과세기준일 현재 주택분 재산세 납세의무자가 종부세 납세의무자) · 지방세법 제107조 제1항 제1호'
+  + '(공유재산은 그 지분에 해당하는 부분에 대하여 지분권자를 납세의무자로 본다) · 종부법 제8조 제1항'
+  + '(1세대1주택자는 세대원 중 1명만이 1주택을 단독으로 소유한 경우 — 공동소유는 해당하지 않아 기본공제 9억원) (조사일 2026-09-18)', () => {
+    // 공시가격 20억 주택을 부부가 절반씩 — 각자 10억을 소유한 것으로 본다.
+    //   10억 − 9억 = 1억 → × 공정시장가액비율 60% = 6,000만원
+    //   6,000만원 × 0.5%(3억 이하) = 30만원 → 농어촌특별세 20% 6만원 → 36만원
+    const j = calculateJointJongbu({ publicPrice: 20 * 억, ownershipShare: 0.5, numHouses: 1 });
+    assert.equal(j.self.basicDeduction, 9 * 억, '공동소유인데 1세대1주택 기본공제 12억이 적용됐다');
+    assert.equal(j.self.taxBase, 6000 * 만);
+    assert.equal(j.self.finalTax, 36 * 만);
+    assert.equal(j.coOwner.finalTax, 36 * 만);
+    // 고령자·장기보유 세액공제는 1세대1주택자 전용이므로 지분 과세에는 없다.
+    const old = calculateJointJongbu({
+      publicPrice: 20 * 억, ownershipShare: 0.5, numHouses: 1, ownerAge: 75, holdingYears: 20,
+    });
+    assert.equal(old.self.creditRate, 0, '공동소유 지분 과세에 고령자·장기보유 세액공제가 적용됐다');
+  });
+
+audit('A-16', '부부 공동명의 1주택자 특례는 단독명의 1세대1주택 계산과 같다',
+  '종합부동산세법 제10조의2 — 세대원 중 1명이 그 배우자와 공동으로 1주택만 소유하고 다른 주택이 없는 경우, '
+  + '신청에 따라 지분율이 큰 사람(같으면 합의한 사람)이 그 주택을 소유한 것으로 보아 제8조 제1항(12억원 공제)과 '
+  + '제9조의 고령자·장기보유 세액공제를 적용한다. 배우자가 아닌 공유자와의 공동소유는 대상이 아니다 (조사일 2026-09-18)', () => {
+    // 공시 20억 · 만 65세 · 보유 12년
+    //   특례: 20억 − 12억 = 8억 × 60% = 4.8억
+    //         3억 × 0.5% + 1.8억 × 0.7% = 150만 + 126만 = 276만
+    //         세액공제 고령 30% + 보유 40% = 70% → 276만 × 30% = 82.8만 → 농특세 16.56만 → 99.36만
+    const j = calculateJointJongbu({
+      publicPrice: 20 * 억, ownershipShare: 0.5, numHouses: 1, ownerAge: 65, holdingYears: 12,
+    });
+    assert.equal(j.special.basicDeduction, 12 * 억);
+    assert.equal(j.special.creditRate, 0.7);
+    assert.equal(j.specialTotal, 993600);
+
+    // 단독명의로 같은 집을 가진 것과 세액이 같아야 한다 — 특례의 정의가 그것이다.
+    const solo = calculateComprehensiveRealEstateTax({
+      publicPrice: 20 * 억, numHouses: 1, isSingleHouse: true, ownerAge: 65, holdingYears: 12,
+    });
+    assert.equal(j.specialTotal, solo.finalTax, '특례 세액이 단독명의 1세대1주택 세액과 다르다');
+
+    // 배우자가 아니면 특례 자체가 없다.
+    const other = calculateJointJongbu({
+      publicPrice: 20 * 억, ownershipShare: 0.5, numHouses: 1, ownerAge: 65, holdingYears: 12,
+      isSpouseJoint: false,
+    });
+    assert.equal(other.special, null, '배우자가 아닌 공유자에게 제10조의2 특례가 적용됐다');
   });
 
 // ══════════════════════════ B. 법정 규칙 준수 ══════════════════════════
