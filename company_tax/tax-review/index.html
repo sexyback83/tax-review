@@ -585,6 +585,117 @@ function inheritInput(g) {
   };
 }
 
+// 장기보유특별공제 산식을 연수와 함께 보여준다. 단독명의·공동명의 결과가 같은 문구를 쓴다.
+function transferLtNote(x, exempt, holdYears, liveYears) {
+  const capped = Math.min(liveYears, holdYears);
+  if (x.usesResidenceOnlyRate) {
+    return '개편안 거주기간 단일공제 — 거주 ' + capped + '년 × 8% → ' + PCT(x.longTermRate);
+  }
+  if (exempt) {
+    return '표2 — 보유 ' + holdYears + '년 × 4% + 거주 ' + capped + '년 × 4% → ' + PCT(x.longTermRate)
+      + (liveYears > holdYears ? ' (거주기간은 보유기간을 넘지 못함)' : '');
+  }
+  return '표1 — 보유 ' + holdYears + '년 × 2% → ' + PCT(x.longTermRate) + ' (한도 30%)';
+}
+
+// 공동명의 양도소득세 결과. 인별 과세라 누진세율 구간과 기본공제가 사람 수만큼 나뉜다.
+// 절세 효과가 이 세목의 핵심이라 단독명의였을 때와 나란히 놓는다.
+function transferJointResult(g, base) {
+  const exempt = base.isOneHouseExempt;
+  const holdYears = base.holdingYears;
+  const liveYears = base.livingYears;
+  const jointInput = Object.assign({}, base, {
+    ownershipShare: Math.min(100, Math.max(0, g.num('tShare'))) / 100,
+  });
+  const j = calculateJointTransfer(jointInput);
+  const r = j.self;
+  const sharePct = PCT(j.ownershipShare);
+  const ltNote = (x) => transferLtNote(x, exempt, holdYears, liveYears);
+
+  const steps = [
+    ['양도차익 (공유자 전체)', W(r.transferGain),
+      '양도가 ' + W(base.salePrice) + ' − 취득가 ' + W(base.purchasePrice)
+      + (base.expenses > 0 ? ' − 필요경비 ' + W(base.expenses) : '')],
+    ['본인 지분 ' + sharePct, W(r.ownedTransferGain),
+      '양도소득세는 인별 과세 — 지분 상당의 차익만 본인 몫 (소득세법 제2조의2 제1항)'],
+  ];
+  if (exempt) {
+    steps.push(['1세대1주택 비과세 — 과세 안분비율', PCT(r.exemptRatio),
+      '(양도가 ' + W(base.salePrice) + ' − ' + W(ONE_HOUSE_EXEMPT_LIMIT) + ') ÷ 양도가 ' + W(base.salePrice)
+      + ' — ' + W(ONE_HOUSE_EXEMPT_LIMIT) + ' 판정은 지분이 아니라 주택 전체 양도가액 기준']);
+    steps.push(['본인 과세대상 양도차익', W(r.taxableGain),
+      '본인 지분 차익 ' + W(r.ownedTransferGain) + ' × ' + PCT(r.exemptRatio)]);
+  }
+  if (r.longTermRate > 0) {
+    steps.push(['장기보유특별공제', '− ' + W(r.longTermDeduction), ltNote(r)]);
+  } else if (holdYears < 3) {
+    steps.push(['장기보유특별공제', '− 0만원', '보유 ' + holdYears + '년 — 3년 미만은 공제 대상이 아님']);
+  }
+  steps.push(['기본공제', '− ' + W(r.basicDeduction), '양도소득 기본공제는 거주자별로 각각 적용 (소득세법 제103조 제1항)']);
+  steps.push(['본인 과세표준', W(r.taxBase), '']);
+  steps.push(['본인 산출세액', W(r.calculatedTax),
+    '기본 6~45% 누진'
+    + (r.surchargeRate > 0 ? ' + 중과 ' + PCT(r.surchargeRate) + 'p' : '')
+    + (r.surchargeSuppressed ? ' · 1세대1주택 비과세와 양립하지 않아 다주택 중과를 배제함' : '')]);
+  steps.push(['본인 지방소득세', W(r.localTax), '산출세액 × 10%']);
+  steps.push(['본인 부담 세액', W(r.finalTax), '']);
+
+  const tables = [{
+    label: '단독명의 vs 공동명의 (현행 기준)',
+    head: ['구분', '본인', '상대 공유자', '합계'],
+    rows: [
+      { cells: ['단독명의로 양도했다면', W(j.soloTax), '—', W(j.soloTax)] },
+      { cells: ['공동명의 ' + sharePct + ' : ' + PCT(1 - j.ownershipShare),
+        W(j.self.finalTax), W(j.coOwner.finalTax), W(j.total)], on: true },
+      { cells: ['차이', '', '', W(j.saving)], sum: true },
+    ],
+    note: '누진세율 구간이 공유자 수만큼 나뉘고 양도소득 기본공제 ' + W(r.basicDeduction)
+      + '을 각자 받으므로 합계가 ' + W(j.saving) + ' 줄어듭니다. '
+      + '장기보유특별공제율과 1세대1주택 ' + W(ONE_HOUSE_EXEMPT_LIMIT) + ' 판정은 지분으로 갈리지 않습니다.',
+  }];
+
+  const compare = [];
+  const notes = [];
+  let anyRateFromCurrent = false;
+  if (base.salePrice > 0) {
+    [BASIS_YEAR_2027, BASIS_YEAR_2028, BASIS_YEAR_2029].forEach((year) => {
+      const x = calculateJointTransfer(Object.assign({}, jointInput, { basis: BASIS_REFORM_2026, basisYear: year }));
+      if (x.self.longTermRateFromCurrent) anyRateFromCurrent = true;
+      const diff = x.total - j.total;
+      const bits = [ltNote(x.self) + ' → 본인 공제 ' + W(x.self.longTermDeduction)
+        + (x.self.isLongTermCapped ? ' (한도 ' + W(x.self.longTermCap) + ' 적용)' : '')];
+      if (x.self.surchargeRate > 0) bits.push('중과 ' + PCT(x.self.surchargeRate) + 'p');
+      if (x.self.hasLongResidenceDeduction) bits.push('기본공제 ' + W(x.self.basicDeduction));
+      bits.push('본인 ' + W(x.self.finalTax) + ' · 상대 공유자 ' + W(x.coOwner.finalTax));
+      bits.push('단독명의였다면 ' + W(x.soloTax));
+      bits.push('현행 대비 ' + (diff === 0 ? '동일' : (diff > 0 ? '+' : '−') + W(Math.abs(diff))));
+      compare.push({ label: year + '년 (개편안 적용)', value: W(x.total), note: bits.join(' · ') });
+    });
+    notes.push('위 개편안 세액은 2027.1.1. 이후 양도분부터 연도별로 단계 적용되는 2026 세제개편안 기준입니다. 위 결과값(파란박스)은 현행 기준입니다.');
+    if (anyRateFromCurrent) {
+      notes.push('장기보유특별공제의 2027·2028년 단계별 전환율은 첨부 개편안 자료에 수치가 없어 현행 표2 공제율을 적용했습니다. 2029년만 거주기간 단일공제(최대 80%)를 적용했습니다.');
+    }
+    notes.push('다주택 중과 한시완화는 2027·2028년만 적용되며, 2029년은 완화가 끝나 현행 중과율로 돌아갑니다.');
+  }
+  notes.push('양도소득세는 인별 과세입니다 (소득세법 제2조의2 제1항). 공유자는 각자 자기 지분의 양도차익으로 따로 신고·납부하므로 누진세율 구간이 나뉘고, 양도소득 기본공제 '
+    + W(r.basicDeduction) + '도 거주자별로 각각 적용됩니다 (제103조 제1항).');
+  if (exempt) {
+    notes.push('1세대1주택 고가주택 ' + W(ONE_HOUSE_EXEMPT_LIMIT) + ' 판정은 주택 전체 양도가액 기준입니다. '
+      + '지분으로 나눈 금액이 ' + W(ONE_HOUSE_EXEMPT_LIMIT) + ' 이하라고 비과세가 되지 않습니다.');
+  }
+  notes.push('두 공유자의 보유·거주기간이 같다고 보고 계산했습니다. 지분을 나중에 증여받는 등 취득 시기가 다르면 각자의 보유기간이 달라지므로 따로 계산해야 합니다.');
+  notes.push('필요경비는 지분 비율대로 안분했습니다. 상대 공유자가 같은 해에 다른 자산을 양도했다면 기본공제(연 '
+    + W(r.basicDeduction) + ')를 이미 썼을 수 있어 실제 세액이 더 클 수 있습니다.');
+
+  return {
+    total: j.total,
+    label: '예상 양도소득세 (공유자 합계 · 현행 기준)',
+    sub: '본인 지분 ' + sharePct + ' · 본인 부담 ' + W(j.self.finalTax)
+      + ' · 단독명의 대비 ' + W(j.saving) + ' 절감',
+    steps: steps, tables: tables, compare: compare, notes: notes,
+  };
+}
+
 // 공동명의 종부세 결과. 인별 과세라 「본인 세액」과 「세대 합계」가 다르고,
 // 부부 공동명의 1주택은 특례(종부법 제10조의2)와 비교해야 해서 단독명의와 화면 구성이 갈린다.
 // 그래서 run() 안에 섞지 않고 따로 뺐다.
@@ -1250,6 +1361,26 @@ const ITEMS = [
     fields: [
       { k: 'sale', label: '양도가액', unit: '만원', sec: '양도 내역' },
       { k: 'buy', label: '취득가액', unit: '만원' },
+      {
+        k: 'tOwn', label: '명의', type: 'choice', opts: ['단독명의', '공동명의'], def: '단독명의',
+        hint: (g) => (g.pick('tOwn') === '단독명의'
+          ? ['공동명의면 지분만큼 인별로 과세합니다 — 누진세율 구간이 사람 수만큼 나뉘고 양도소득 기본공제 '
+            + W(TRANSFER_BASIC_DEDUCTION) + '을 각자 받습니다 (소득세법 제103조 제1항).']
+          : ['양도소득세는 인별 과세입니다. 공유자는 각자 자기 지분의 양도차익으로 따로 신고·납부합니다.',
+            '공유자가 배우자든 아니든 계산은 같습니다 — 종부세와 달리 선택할 수 있는 특례가 없습니다.',
+            '1세대1주택 고가주택 ' + W(ONE_HOUSE_EXEMPT_LIMIT) + ' 판정은 지분이 아니라 주택 전체 양도가액 기준입니다.']),
+      },
+      {
+        k: 'tShare', label: '본인 지분율', unit: '%', def: 50,
+        show: (g) => g.pick('tOwn') === '공동명의',
+        hint: (g) => {
+          const pct = Math.min(100, Math.max(0, g.num('tShare')));
+          return [
+            '등기부상 본인 지분입니다. 나머지 ' + (100 - pct) + '%는 상대 공유자 몫으로 계산합니다.',
+            '두 공유자의 보유·거주기간이 같다고 봅니다. 지분을 나중에 증여받는 등 취득 시기가 다르면 각자 따로 계산해야 합니다.',
+          ];
+        },
+      },
       { k: 'years', label: '보유기간', unit: '년', def: 10 },
       {
         k: 'exempt', label: '1세대 1주택 비과세', type: 'choice', opts: ['아니오', '예'], def: '아니오',
@@ -1310,21 +1441,10 @@ const ITEMS = [
         holdingYears: holdYears, livingYears: liveYears, isOneHouseExempt: exempt,
         surchargeHouses: TRANSFER_SURCHARGE_OPTIONS.find((o) => o.label === pickValid(g, 'surcharge')).houses,
       };
+      if (g.pick('tOwn') === '공동명의') return transferJointResult(g, base);
       // 주 결과는 현행 기준이다.
       const r = calculateTransferIncomeTax(base);
-
-      // 장기보유특별공제 산식을 연수와 함께 보여준다.
-      const ltNote = (x) => {
-        const capped = Math.min(liveYears, holdYears);
-        if (x.usesResidenceOnlyRate) {
-          return '개편안 거주기간 단일공제 — 거주 ' + capped + '년 × 8% → ' + PCT(x.longTermRate);
-        }
-        if (exempt) {
-          return '표2 — 보유 ' + holdYears + '년 × 4% + 거주 ' + capped + '년 × 4% → ' + PCT(x.longTermRate)
-            + (liveYears > holdYears ? ' (거주기간은 보유기간을 넘지 못함)' : '');
-        }
-        return '표1 — 보유 ' + holdYears + '년 × 2% → ' + PCT(x.longTermRate) + ' (한도 30%)';
-      };
+      const ltNote = (x) => transferLtNote(x, exempt, holdYears, liveYears);
 
       const steps = [
         ['양도차익', W(r.transferGain),

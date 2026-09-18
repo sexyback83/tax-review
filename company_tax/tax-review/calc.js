@@ -752,11 +752,17 @@ function calculateTransferIncomeTax({
   livingYears = 0,
   isOneHouseExempt = false,
   surchargeHouses = 0,
+  // 공유지분 (0~1). 양도소득세도 인별 과세이므로 지분 상당의 양도차익만 본인 몫이다.
+  ownershipShare = 1,
   basis = BASIS_CURRENT,
   basisYear = BASIS_YEAR_2027,
 }) {
   const isReform = basis === BASIS_REFORM_2026;
   const transferGain = Math.max(0, salePrice - purchasePrice - expenses);
+  // 공유 자산은 각자 자기 지분의 양도가액·취득가액·필요경비로 차익을 계산한다.
+  // 세 값에 같은 지분을 곱한 것과 같으므로 차익에 한 번만 곱한다.
+  const share = Math.min(1, Math.max(0, ownershipShare));
+  const ownedGain = transferGain * share;
 
   // 1세대1주택 고가주택의 과세대상 양도차익 (소득세법 시행령 제160조 제1항 제1호)
   //   과세대상 양도차익 = 양도차익 × (양도가액 − 12억원) ÷ 양도가액
@@ -767,9 +773,13 @@ function calculateTransferIncomeTax({
   // 흔한 오해 둘 다 아니다 — "양도가액 − 12억원"도 아니고 "양도차익 − 12억원"도 아니다.
   // 예: 양도 20억 / 취득 10억 → 차익 10억 × (20−12)/20 = 4억이 과세대상이다.
   //     (오해대로면 8억 또는 0원이 되어 세액이 크게 어긋난다.)
+  //
+  // 공동명의여도 12억원 판정은 **주택 전체 양도가액** 기준이다. 20억짜리 집을 부부가
+  // 절반씩 가졌다고 각자 10억으로 보아 비과세되는 것이 아니다. 그래서 안분비율은
+  // 지분을 곱하기 전의 양도가액으로 구하고, 그 비율을 각자 지분 차익에 곱한다.
   const exemptRatio = !isOneHouseExempt ? 1
     : salePrice > ONE_HOUSE_EXEMPT_LIMIT ? (salePrice - ONE_HOUSE_EXEMPT_LIMIT) / salePrice : 0;
-  const taxableGain = transferGain * exemptRatio;
+  const taxableGain = ownedGain * exemptRatio;
 
   // 1세대1주택 비과세는 1주택자에게만 적용되므로 다주택 중과와 동시에 성립하지 않는다.
   // 두 값이 함께 들어오면 모순이므로 중과를 배제한다 (화면에서도 선택을 막지만 여기서 한 번 더 막는다).
@@ -821,7 +831,9 @@ function calculateTransferIncomeTax({
     basis,
     basisYear,
     isReform,
-    transferGain: Math.round(transferGain),
+    transferGain: Math.round(transferGain),      // 공유자 전체 기준
+    ownershipShare: share,
+    ownedTransferGain: Math.round(ownedGain),    // 본인 지분 몫 — 과세대상 차익의 출발점
     exemptRatio,
     taxableGain: Math.round(taxableGain),
     longTermRate,
@@ -841,6 +853,54 @@ function calculateTransferIncomeTax({
     calculatedTax: Math.round(calculatedTaxRaw),
     localTax: Math.round(localTaxRaw),
     finalTax: Math.round(calculatedTaxRaw + localTaxRaw),
+  };
+}
+
+// ── 공동명의 (소득세법 제2조의2 제1항 인별 과세 · 제103조 제1항 양도소득 기본공제) ──
+//
+// 양도소득세도 인별 과세다. 공유 자산을 팔면 각 공유자가 자기 지분의 양도차익으로 따로
+// 신고·납부하므로, 누진세율 구간이 사람 수만큼 나뉘고 양도소득 기본공제 250만원도
+// 거주자별로 각각 적용된다 (제103조 제1항). 공동명의의 양도세 절세 효과는 이 둘에서 나온다.
+//
+// 지분으로 갈리지 않는 것도 있다.
+//   · 1세대1주택 고가주택 12억원 판정 — 주택 전체 양도가액 기준이다 (지분별 금액이 아니다).
+//   · 장기보유특별공제율 — 보유·거주기간으로 정해지므로 공유자마다 같다.
+//   · 다주택 중과 — 주택 수는 세대 기준으로 판정하고, 공동소유 주택도 각자 1채로 센다.
+//
+// 이 함수는 두 공유자의 보유·거주기간이 같다고 본다. 지분을 나중에 증여받은 경우처럼
+// 취득 시기가 다르면 각자의 보유기간이 달라지므로 따로 계산해야 한다.
+function calculateJointTransfer({
+  salePrice,
+  purchasePrice,
+  expenses = 0,
+  holdingYears = 0,
+  livingYears = 0,
+  isOneHouseExempt = false,
+  surchargeHouses = 0,
+  ownershipShare = 0.5,
+  basis = BASIS_CURRENT,
+  basisYear = BASIS_YEAR_2027,
+}) {
+  const share = Math.min(1, Math.max(0, ownershipShare));
+  const common = {
+    salePrice, purchasePrice, expenses, holdingYears, livingYears,
+    isOneHouseExempt, surchargeHouses, basis, basisYear,
+  };
+  const self = calculateTransferIncomeTax(Object.assign({}, common, { ownershipShare: share }));
+  const coOwner = calculateTransferIncomeTax(Object.assign({}, common, { ownershipShare: 1 - share }));
+  // 같은 자산을 한 사람이 단독으로 양도했을 때 — 공동명의의 효과를 재는 기준선이다.
+  const solo = calculateTransferIncomeTax(Object.assign({}, common, { ownershipShare: 1 }));
+  const total = self.finalTax + coOwner.finalTax;
+
+  return {
+    ownershipShare: share,
+    self,
+    coOwner,
+    solo,
+    soloTax: solo.finalTax,
+    total: Math.round(total),
+    // 단독명의 대비 절감액. 누진세율이 나뉘고 기본공제를 두 번 받으므로 음수가 되지 않는다.
+    saving: Math.round(solo.finalTax - total),
   };
 }
 
@@ -1437,6 +1497,7 @@ if (typeof module !== 'undefined' && module.exports) {
     JOINT_ROUTE_SHARE,
     JOINT_ROUTE_SPECIAL,
     calculateTransferIncomeTax: guarded('calculateTransferIncomeTax', calculateTransferIncomeTax),
+    calculateJointTransfer: guarded('calculateJointTransfer', calculateJointTransfer),
     calculateBusinessSuccession: guarded('calculateBusinessSuccession', calculateBusinessSuccession),
     calculateWeightedNetIncome,
     calculateUnlistedStockValue: guarded('calculateUnlistedStockValue', calculateUnlistedStockValue),
