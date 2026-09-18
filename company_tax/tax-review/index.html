@@ -585,6 +585,115 @@ function inheritInput(g) {
   };
 }
 
+// 공동명의 종부세 결과. 인별 과세라 「본인 세액」과 「세대 합계」가 다르고,
+// 부부 공동명의 1주택은 특례(종부법 제10조의2)와 비교해야 해서 단독명의와 화면 구성이 갈린다.
+// 그래서 run() 안에 섞지 않고 따로 뺐다.
+function jongbuJointResult(g, base, ownKind) {
+  const spouseJoint = ownKind === '부부 공동명의';
+  const jointInput = Object.assign({}, base, {
+    ownershipShare: Math.min(100, Math.max(0, g.num('share'))) / 100,
+    isSpouseJoint: spouseJoint,
+    // base 의 isSingleHouse 는 공동명의라 false 다 — 특례 판정은 계산 모듈이 한다.
+    // 거주 여부는 특례(1세대1주택 간주) 기본공제와 개편안 거주비중에 쓰이므로 그대로 넘긴다.
+    isResident: g.num('houses') <= 1 && g.pick('resident') === '예',
+  });
+  const j = calculateJointJongbu(jointInput);
+  const r = j.self;
+  const sharePct = PCT(j.ownershipShare);
+  // 본인이 실제로 부담하는 금액 — 지분 과세면 본인 세액, 특례면 납세의무자 한 사람만 낸다.
+  const selfBurden = j.route === JOINT_ROUTE_SPECIAL
+    ? (j.isSelfTaxpayer ? j.specialTotal : 0)
+    : j.self.finalTax;
+
+  const steps = [
+    ['주택 공시가격 합계', W(r.publicPrice), '공유자 전체 기준'],
+    ['본인 지분 ' + sharePct, W(r.ownedPublicPrice), '종부세는 인별 과세 — 지분 상당액만 본인 몫 (종부법 제7조 제1항)'],
+    ['기본공제', '− ' + W(r.basicDeduction), '공동소유는 1세대1주택자가 아니므로 인별 ' + W(JONGBU_DEDUCTION_GENERAL)],
+    ['본인 과세표준', W(r.taxBase), '(지분 상당액 − 공제) × 공정시장가액비율 ' + PCT(r.fairMarketRatio)],
+    ['본인 산출세액', W(r.grossTax), r.isMultiHouse ? '3주택 이상 중과 0.5~5.0%' : '2주택 이하 0.5~2.7%'],
+  ];
+  if (r.propertyTaxPaid > 0) steps.push(['재산세 중복분 공제', '− ' + W(r.propertyTaxPaid), '본인 입력값']);
+  steps.push(['본인 농어촌특별세', W(r.ruralTax), '종부세액 × 20%']);
+  steps.push(['본인 부담 세액', W(r.finalTax), '지분 과세 기준']);
+
+  const tables = [];
+  if (j.specialAvailable) {
+    const payer = j.isSelfTaxpayer ? '본인' : '배우자';
+    tables.push({
+      label: '지분 과세 vs 부부 공동명의 1주택자 특례 (현행 기준)',
+      head: ['경로', '본인', '배우자', '세대 합계'],
+      rows: [
+        {
+          cells: ['지분 과세 — 각자 ' + W(JONGBU_DEDUCTION_GENERAL) + ' 공제',
+            W(j.self.finalTax), W(j.coOwner.finalTax), W(j.shareRouteTotal)],
+          on: j.route === JOINT_ROUTE_SHARE,
+        },
+        {
+          cells: ['특례 신청 — ' + W(JONGBU_DEDUCTION_SINGLE) + ' 공제 + 세액공제',
+            j.isSelfTaxpayer ? W(j.specialTotal) : W(0),
+            j.isSelfTaxpayer ? W(0) : W(j.specialTotal),
+            W(j.specialTotal)],
+          on: j.route === JOINT_ROUTE_SPECIAL,
+        },
+        { cells: ['차이', '', '', W(j.saving)], sum: true },
+      ],
+      note: '특례를 신청하면 지분율이 큰 ' + payer + '이(가) 납세의무자가 되어 세대 몫을 전부 냅니다. '
+        + '현재 입력으로는 「' + j.route + '」가 ' + W(j.saving) + ' 유리합니다. '
+        + '특례는 자동 적용이 아니라 매년 9.16.~9.30.에 신청해야 합니다 (종부법 제10조의2).',
+    });
+  }
+
+  const compare = [];
+  const notes = [];
+  if (r.publicPrice > 0) {
+    [BASIS_YEAR_2027, BASIS_YEAR_2028].forEach((year) => {
+      const x = calculateJointJongbu(Object.assign({}, jointInput, { basis: BASIS_REFORM_2026, basisYear: year }));
+      const diff = x.total - j.total;
+      compare.push({
+        label: year + '년 (개편안 적용)',
+        value: W(x.total),
+        note: '본인 ' + W(x.self.finalTax) + ' · 상대 공유자 ' + W(x.coOwner.finalTax)
+          + (x.specialAvailable ? ' · 특례 ' + W(x.specialTotal) + ' → 유리한 경로 ' + x.route : '')
+          + ' · 인별 기본공제 ' + W(x.self.basicDeduction)
+          + ' · 공정시장가액비율 ' + PCT(x.self.fairMarketRatio)
+          + ' → 현행 대비 ' + (diff === 0 ? '동일' : (diff > 0 ? '+' : '−') + W(Math.abs(diff))),
+      });
+    });
+  }
+
+  notes.push('종부세는 인별 과세입니다 (종부법 제7조 제1항). 공유 주택은 지분에 해당하는 부분을 각자 소유한 것으로 보아 '
+    + '각자 기본공제 ' + W(JONGBU_DEDUCTION_GENERAL) + '을 받습니다 — 절반씩이면 합계 '
+    + W(JONGBU_DEDUCTION_GENERAL * 2) + '이 빠집니다.');
+  notes.push('공동소유는 단독소유가 아니므로 1세대1주택자가 아닙니다 (종부법 제8조 제1항). '
+    + '지분 과세에서는 ' + W(JONGBU_DEDUCTION_SINGLE) + ' 공제도, 고령자·장기보유 세액공제도 적용되지 않습니다.');
+  if (j.specialAvailable) {
+    notes.push('부부 공동명의 1주택자 특례(종부법 제10조의2)는 배우자와 1주택만 공동소유하고 세대원 누구도 다른 주택이 '
+      + '없을 때 신청할 수 있습니다. 신청하면 지분율이 큰 사람(같으면 합의한 사람)이 단독소유한 것으로 보아 과세합니다.');
+    if (!j.isSelfTaxpayer) {
+      notes.push('본인 지분이 절반 미만이라 특례를 신청하면 배우자가 납세의무자가 됩니다. 고령자·장기보유 세액공제는 '
+        + '납세의무자인 배우자의 나이·보유기간으로 계산해야 하는데, 이 결과는 입력한 본인 기준이므로 특례 세액이 실제와 다를 수 있습니다.');
+    }
+  } else if (spouseJoint) {
+    notes.push('주택이 2채 이상이라 부부 공동명의 1주택자 특례(종부법 제10조의2) 대상이 아닙니다 — 지분 과세만 계산했습니다.');
+  } else {
+    notes.push('배우자가 아닌 공유자와의 공동소유는 부부 공동명의 1주택자 특례(종부법 제10조의2) 대상이 아닙니다.');
+  }
+  notes.push('상대 공유자의 기납부 재산세 중복분은 알 수 없어 0으로 두었습니다. 그만큼 상대 공유자 세액이 크게 나옵니다.');
+  notes.push('개편안 비교에서는 상대 공유자도 같은 주택에 거주하는 것으로 보아 인별 기본공제의 거주비중을 적용했습니다. 실제로 거주하지 않는 공유자라면 그 사람의 공제가 줄어듭니다.');
+  notes.push('위 개편안 세액은 2027.1.1. 이후 납세의무 성립분부터 적용되는 2026 세제개편안 기준입니다. 결과값(파란박스)은 현행 기준입니다.');
+  notes.push('세부담상한은 현행·개편안 모두 직전연도 보유세(재산세 + 종부세)의 ' + PCT(JONGBU_BURDEN_CAP_RATE)
+    + '입니다. 직전연도 보유세를 입력받지 않으므로 이 도구는 상한 적용을 계산하지 않습니다.');
+
+  return {
+    total: j.specialAvailable ? j.total : r.finalTax,
+    label: j.specialAvailable ? '예상 종합부동산세 (부부 합계 · 현행 기준)' : '예상 종합부동산세 (본인 지분 · 현행 기준)',
+    sub: j.specialAvailable
+      ? '본인 지분 ' + sharePct + ' · 유리한 경로 ' + j.route + ' · 본인 부담 ' + W(selfBurden)
+      : '본인 지분 ' + sharePct + ' · 과세표준 ' + W(r.taxBase),
+    steps: steps, tables: tables, compare: compare, notes: notes,
+  };
+}
+
 const ITEMS = [
   {
     key: 'inherit', name: '상속세', desc: '일괄/인적공제 자동 유리선택 · 1·2차 상속 합계',
@@ -885,7 +994,21 @@ const ITEMS = [
           ];
         },
       },
-      { k: 'years', label: '증여자 보유기간', unit: '년', def: 10, adv: true },
+      {
+        k: 'years', label: '증여자 보유기간', unit: '년', def: 10, adv: true,
+        hint: (g) => {
+          const lines = [
+            '증여자가 그 재산을 취득해 보유해 온 기간입니다 (취득일 ~ 증여일). 수증자 기준이 아닙니다.',
+            '부담부증여의 채무 인수액은 유상양도로 보아 증여자에게 양도소득세가 붙는데, 그 장기보유특별공제율을 정하는 값입니다.',
+            '소득세법 제95조 제2항 표1 — 보유 3년 이상부터 1년당 2%, 한도 30%. 3년 미만이면 공제가 없습니다.',
+            '증여세 자체에는 영향이 없습니다 — 증여세는 보유기간과 무관합니다.',
+          ];
+          if (g.won('debt') <= 0) {
+            lines.push('현재 「수증자 인수 채무액」이 0원이라 양도세 부분이 없으므로 이 값은 결과에 반영되지 않습니다.');
+          }
+          return lines;
+        },
+      },
     ],
     run(g) {
       const r = calculateGiftTax({
@@ -933,18 +1056,70 @@ const ITEMS = [
       { k: 'pub', label: '주택 공시가격 합계', unit: '만원', sec: '보유 현황' },
       {
         k: 'houses', label: '주택 수', unit: '채', def: 1,
-        hint: '주택 수에 따라 아래 「1세대 1주택 단독명의」가 자동으로 정해집니다.',
+        hint: [
+          '주택 수와 아래 「명의」에 따라 「1세대 1주택 단독명의」가 자동으로 정해집니다.',
+          '공동소유 주택도 공동소유자 각자가 1채를 소유한 것으로 셉니다 — 지분이 절반이어도 1채입니다.',
+        ],
       },
       {
-        // 주택 수에서 곧바로 따라오는 값이므로 선택을 받지 않는다.
-        // 1채 → 예, 2채 이상 → 아니오. 손으로 뒤집으면 기본공제와 세율표가 어긋난다.
+        k: 'own', label: '명의', type: 'choice',
+        opts: ['단독명의', '부부 공동명의', '기타 공동명의'], def: '단독명의',
+        hint: (g) => {
+          const kind = g.pick('own');
+          if (kind === '단독명의') {
+            return ['공동명의면 지분만큼 인별로 과세합니다 — 기본공제 '
+              + W(JONGBU_DEDUCTION_GENERAL) + '을 각자 한 번씩 받습니다 (종부법 제7조 제1항).'];
+          }
+          const lines = [
+            '종부세는 인별 과세입니다. 공유 주택은 지분에 해당하는 부분을 각자 소유한 것으로 보아 각자 '
+              + W(JONGBU_DEDUCTION_GENERAL) + '을 공제합니다.',
+            '공동소유는 단독소유가 아니므로 1세대1주택자가 아닙니다 — ' + W(JONGBU_DEDUCTION_SINGLE)
+              + ' 공제도, 고령자·장기보유 세액공제도 적용되지 않습니다 (종부법 제8조 제1항).',
+          ];
+          if (kind === '부부 공동명의') {
+            lines.push('배우자와 1주택만 공동소유하면 「부부 공동명의 1주택자 특례」(종부법 제10조의2)를 신청해 '
+              + '단독명의처럼 과세받을 수 있습니다. 결과 화면에서 두 경로를 비교해 드립니다.');
+          } else {
+            lines.push('배우자가 아닌 공유자(부모·자녀·형제 등)와의 공동소유는 제10조의2 특례 대상이 아닙니다.');
+          }
+          return lines;
+        },
+      },
+      {
+        k: 'share', label: '본인 지분율', unit: '%', def: 50,
+        show: (g) => g.pick('own') !== '단독명의',
+        hint: (g) => {
+          const pct = Math.min(100, Math.max(0, g.num('share')));
+          const lines = ['등기부상 본인 지분입니다. 나머지 ' + (100 - pct) + '%는 상대 공유자 몫으로 계산합니다.'];
+          if (g.won('pub') > 0) {
+            lines.push('본인 지분 상당액 ' + W(g.won('pub') * pct / 100)
+              + ' · 상대 공유자 ' + W(g.won('pub') * (100 - pct) / 100));
+          }
+          if (g.pick('own') === '부부 공동명의') {
+            lines.push('특례를 신청하면 지분율이 큰 사람이 납세의무자가 됩니다 (같으면 합의로 정합니다).');
+          }
+          return lines;
+        },
+      },
+      {
+        // 주택 수와 명의에서 곧바로 따라오는 값이므로 선택을 받지 않는다.
+        // 단독명의 1채 → 예. 손으로 뒤집으면 기본공제와 세율표가 어긋난다.
         k: 'single', label: '1세대 1주택 단독명의', type: 'readonly',
-        value: (g) => (g.num('houses') <= 1 ? '예 (자동)' : '아니오 (자동)'),
-        hint: (g) => (g.num('houses') <= 1
-          ? ['1주택이므로 기본공제 12억원과 2주택 이하 세율표(0.5~2.7%)가 적용됩니다.',
-            '공동명의라면 지분별로 각자 9억원씩 공제받는 편이 유리할 수 있어 별도 검토가 필요합니다.']
-          : [g.num('houses') + '채이므로 기본공제 9억원이 적용됩니다.',
-            g.num('houses') >= 3 ? '3주택 이상이라 중과세율(0.5~5.0%)이 적용됩니다.' : '2주택은 일반세율(0.5~2.7%)입니다.']),
+        value: (g) => (g.pick('own') !== '단독명의' ? '아니오 (공동명의)'
+          : (g.num('houses') <= 1 ? '예 (자동)' : '아니오 (자동)')),
+        hint: (g) => {
+          if (g.pick('own') !== '단독명의') {
+            return ['공동명의는 단독소유가 아니므로 1세대1주택자가 아닙니다 — 각자 '
+              + W(JONGBU_DEDUCTION_GENERAL) + '씩 공제합니다.',
+            g.num('houses') >= 3 ? '3주택 이상이라 중과세율(0.5~5.0%)이 적용됩니다.'
+              : '2주택 이하 세율표(0.5~2.7%)가 적용됩니다.'];
+          }
+          return g.num('houses') <= 1
+            ? ['1주택이므로 기본공제 ' + W(JONGBU_DEDUCTION_SINGLE) + '과 2주택 이하 세율표(0.5~2.7%)가 적용됩니다.',
+              '고령자·장기보유 세액공제도 1세대1주택자에게만 적용됩니다.']
+            : [g.num('houses') + '채이므로 기본공제 ' + W(JONGBU_DEDUCTION_GENERAL) + '이 적용됩니다.',
+              g.num('houses') >= 3 ? '3주택 이상이라 중과세율(0.5~5.0%)이 적용됩니다.' : '2주택은 일반세율(0.5~2.7%)입니다.'];
+        },
       },
       { k: 'hold', label: '보유기간', unit: '년', def: 5, adv: true, sec: '세부 옵션' },
       { k: 'ownerAge', label: '만 나이', unit: '세', adv: true, hint: '고령자 세액공제 판정' },
@@ -1001,8 +1176,11 @@ const ITEMS = [
       { k: 'adjusted', label: '조정대상지역', type: 'choice', opts: ['아니오', '예'], def: '아니오', adv: true, hint: '개편안 2028년 공정시장가액비율 80% 판정' },
     ],
     run(g) {
-      // 1세대1주택 여부는 주택 수에서 결정된다 (선택값을 받지 않는다).
-      const single = g.num('houses') <= 1;
+      // 1세대1주택 여부는 주택 수와 명의에서 결정된다 (선택값을 받지 않는다).
+      // 공동소유는 단독소유가 아니므로 1세대1주택자가 될 수 없다 (종부법 제8조 제1항).
+      const ownKind = g.pick('own');
+      const joint = ownKind !== '단독명의';
+      const single = g.num('houses') <= 1 && !joint;
       const base = {
         publicPrice: g.won('pub'), numHouses: g.num('houses'), isSingleHouse: single,
         ownerAge: g.num('ownerAge'), holdingYears: g.num('hold'), propertyTaxPaid: g.won('ptax'),
@@ -1013,6 +1191,7 @@ const ITEMS = [
           ? Math.min(1, g.won('residentPub') / g.won('pub')) * 100 : 0,
         livingYears: g.num('liveYears'), isAdjustedArea: g.pick('adjusted') === '예',
       };
+      if (joint) return jongbuJointResult(g, base, ownKind);
       // 주 결과는 현행 기준이다.
       const r = calculateComprehensiveRealEstateTax(base);
       const steps = [
@@ -1810,7 +1989,10 @@ function accessor() {
 }
 
 function visibleFields() {
-  return allFields().filter((f) => state.mode === 'deep' || !f.adv);
+  // show(g) 는 다른 입력값에 따라 의미가 없어지는 칸을 감춘다 (예: 단독명의일 때의 지분율).
+  // 선택지를 누르면 render() 가 통째로 다시 그리므로 목록 변화가 곧바로 반영된다.
+  const g = accessor();
+  return allFields().filter((f) => (state.mode === 'deep' || !f.adv) && (!f.show || f.show(g)));
 }
 
 // 선택지가 비활성으로 바뀌기 전에 고른 값이 state에 남아 있을 수 있다.
@@ -2897,7 +3079,8 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// FR-05 — 숫자 필드는 숫자 이외의 입력을 받지 않는다. 음수·비수치는 구조적으로 불가능하다.
+// FR-05 — 숫자 필드는 숫자 이외의 입력을 받지 않는다. 비수치는 구조적으로 불가능하고,
+// 음수는 결손을 받아야 하는 `signed` 칸(순손익액)에서만 허용된다.
 document.addEventListener('input', (e) => {
   const el = e.target.closest('[data-inp]');
   if (!el) return;

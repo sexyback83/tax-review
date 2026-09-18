@@ -411,7 +411,11 @@ function calculateGiftTax({
   // 양도세 부분 — 채무 인수액에 대응하는 취득가액만 차감한다.
   const acquisitionShare = giftValue > 0 ? acquisitionCost * debtAssumed / giftValue : 0;
   const transferGain = Math.max(0, debtAssumed - acquisitionShare);
-  const longTermRate = holdingYears >= 3 ? Math.min(0.3, 0.02 * holdingYears) : 0;
+  // 채무인수분은 유상양도이므로 장기보유특별공제도 양도세 표1을 그대로 쓴다.
+  // holdingYears 는 증여자가 그 재산을 보유한 기간이다 (취득일 ~ 증여일).
+  // 수치는 §4의 상수를 참조한다 — 같은 법정 수치를 두 곳에 적지 않는다 (원칙 제1조).
+  const longTermRate = holdingYears >= LONG_TERM_MIN_YEARS
+    ? Math.min(LONG_TERM_LIMIT_GENERAL, LONG_TERM_RATE_GENERAL * holdingYears) : 0;
   const transferTaxBase = Math.max(0, transferGain * (1 - longTermRate) - TRANSFER_BASIC_DEDUCTION);
   const transferTaxRaw = calculateTieredTax(transferTaxBase, INCOME_TAX_BRACKETS) * (1 + LOCAL_INCOME_TAX_RATE);
 
@@ -482,6 +486,8 @@ function calculateComprehensiveRealEstateTax({
   propertyTaxPaid = 0,
   basis = BASIS_CURRENT,
   basisYear = BASIS_YEAR_2027,
+  // 공유지분 (0~1). 종부세는 인별 과세이므로 지분 상당액만 본인 몫이다 (종부법 제7조 제1항).
+  ownershipShare = 1,
   isResident = true,       // 개편안 — 1세대1주택 거주 여부로 기본공제가 갈린다
   residentRatio = 0,       // 개편안 — 다주택 기본공제 중 5억원의 거주비중 안분율(%)
   livingYears = 0,         // 개편안 — 세액공제가 보유기간에서 거주기간으로 전환
@@ -512,7 +518,11 @@ function calculateComprehensiveRealEstateTax({
   const fairMarketRatio = !isReform ? FAIR_MARKET_RATIO
     : (usesHeavyRatio ? FAIR_MARKET_RATIO_REFORM_HEAVY : FAIR_MARKET_RATIO_REFORM)[basisYear];
 
-  const taxBase = Math.max(0, (publicPrice - basicDeduction) * fairMarketRatio);
+  // 공유 주택은 지분에 해당하는 부분을 각자 소유한 것으로 보아 각자 과세한다.
+  // 기본공제도 인별로 한 번씩 적용되므로 지분을 먼저 곱하고 공제를 뺀다.
+  const share = Math.min(1, Math.max(0, ownershipShare));
+  const ownedPrice = publicPrice * share;
+  const taxBase = Math.max(0, (ownedPrice - basicDeduction) * fairMarketRatio);
   // 개편안은 주택수 기준 차등세율을 단계적으로 폐지한다.
   // '27년은 차등을 남기고, '28년 이후는 가액만 보는 단일 표로 간다.
   const isFirstReformYear = basisYear === BASIS_YEAR_2027;
@@ -561,7 +571,9 @@ function calculateComprehensiveRealEstateTax({
     basis,
     basisYear,
     isReform,
-    publicPrice,
+    publicPrice,               // 주택 공시가격 합계 (지분 적용 전)
+    ownershipShare: share,
+    ownedPublicPrice: Math.round(ownedPrice),   // 본인 지분 상당액 — 과세표준의 출발점
     basicDeduction,
     fairMarketRatio,
     usesHeavyRatio,
@@ -592,12 +604,104 @@ function calculateComprehensiveRealEstateTax({
   };
 }
 
+// ── 공동명의 (종부법 제7조 제1항 인별 과세 · 제10조의2 부부 공동명의 1주택자 특례) ──
+//
+// 종부세는 인별 과세다. 공유 주택은 지분에 해당하는 부분을 각자 소유한 것으로 보므로
+// (재산세 납세의무자를 따라간다 — 지방세법 제107조 제1항 제1호) 기본공제도 각자 한 번씩
+// 받는다. 부부가 절반씩 가지면 9억 + 9억 = 18억이 빠져 단독명의 12억보다 크다.
+//
+// 대신 공동소유는 「1세대1주택자」가 아니다 — 세대원 중 1명이 1주택을 **단독으로** 소유한
+// 경우를 말하기 때문이다 (종부법 제8조 제1항). 그래서 지분 과세에서는 12억 공제도,
+// 고령자·장기보유 세액공제도 없다. 주택 수는 공동소유자 각자가 그 주택을 소유한 것으로 센다.
+//
+// 종부법 제10조의2는 그 불리함을 메우는 선택지다 — 부부가 1주택만 공동으로 소유하고
+// 세대원 누구도 다른 주택이 없으면, 신청(매년 9.16.~9.30.)에 따라 지분율이 큰 사람
+// (같으면 합의한 사람)이 단독소유한 것으로 보아 1세대1주택자로 과세받을 수 있다.
+// 연령·보유기간 세액공제도 그 사람 기준으로 적용된다.
+// 배우자가 아닌 공유자(부모·자녀·형제 등)와의 공동소유는 이 특례 대상이 아니다.
+//
+// 어느 쪽이 유리한지는 공시가격·지분율·연령·보유기간에 따라 갈리므로 둘 다 계산해 비교한다.
+const JOINT_ROUTE_SHARE = '지분 과세';
+const JOINT_ROUTE_SPECIAL = '부부 공동명의 1주택자 특례';
+
+function calculateJointJongbu({
+  publicPrice,
+  ownershipShare = 0.5,
+  isSpouseJoint = true,      // 공유자가 배우자인지 — 제10조의2 특례는 배우자 공동소유만 대상이다
+  numHouses = 1,
+  ownerAge = 0,
+  holdingYears = 0,
+  propertyTaxPaid = 0,
+  basis = BASIS_CURRENT,
+  basisYear = BASIS_YEAR_2027,
+  isResident = true,
+  residentRatio = 0,
+  livingYears = 0,
+  isAdjustedArea = false,
+}) {
+  const share = Math.min(1, Math.max(0, ownershipShare));
+  // 개편안의 다주택 기본공제는 4억 + 5억 × 거주비중이다. 주택이 하나뿐이면 거주비중은
+  // 거주 여부로 정해진다 — 거주하면 100%, 아니면 0%. (여러 채면 화면이 넘겨준 값을 쓴다.)
+  const shareRouteResidentRatio = numHouses <= 1 ? (isResident ? 100 : 0) : residentRatio;
+  const common = {
+    publicPrice, numHouses, basis, basisYear, livingYears, isAdjustedArea,
+    // 지분 과세에서는 1세대1주택 특례가 없으므로 isResident·세액공제 인자는 결과에 닿지 않는다.
+    isSingleHouse: false, isResident: false, residentRatio: shareRouteResidentRatio,
+  };
+
+  // ① 지분 과세 — 각자 자기 지분만큼 일반 기본공제(9억)를 받고 따로 낸다.
+  const self = calculateComprehensiveRealEstateTax(Object.assign({}, common, {
+    ownershipShare: share, ownerAge, holdingYears, propertyTaxPaid,
+  }));
+  // 상대 공유자의 기납부 재산세 중복분은 알 수 없으므로 0으로 둔다 (그만큼 크게 나온다).
+  const coOwner = calculateComprehensiveRealEstateTax(Object.assign({}, common, {
+    ownershipShare: 1 - share, ownerAge: 0, holdingYears: 0, propertyTaxPaid: 0,
+  }));
+  const shareRouteTotal = self.finalTax + coOwner.finalTax;
+
+  // ② 특례 — 지분이 큰 사람이 단독소유한 것으로 보아 1세대1주택자로 과세한다.
+  //    부부가 1주택만 공동소유하는 경우에 한한다.
+  const specialAvailable = isSpouseJoint && numHouses <= 1;
+  const special = specialAvailable
+    ? calculateComprehensiveRealEstateTax({
+      publicPrice, numHouses, basis, basisYear, livingYears, isAdjustedArea,
+      isSingleHouse: true, isResident, residentRatio,
+      ownershipShare: 1, ownerAge, holdingYears, propertyTaxPaid,
+    })
+    : null;
+  const specialTotal = special ? special.finalTax : Infinity;
+
+  // 납세의무자는 지분율이 큰 사람이다. 같으면 공동소유자 간 합의로 정한다 —
+  // 이 도구는 합의 결과를 알 수 없으므로 본인이 신청한 경우로 보아 계산한다.
+  const isSelfTaxpayer = share >= 0.5;
+  const useSpecial = specialAvailable && specialTotal < shareRouteTotal;
+
+  return {
+    ownershipShare: share,
+    isSpouseJoint,
+    self,
+    coOwner,
+    shareRouteTotal: Math.round(shareRouteTotal),
+    special,
+    specialAvailable,
+    specialTotal: specialAvailable ? Math.round(specialTotal) : 0,
+    isSelfTaxpayer,
+    route: useSpecial ? JOINT_ROUTE_SPECIAL : JOINT_ROUTE_SHARE,
+    // 유리한 쪽을 골랐을 때 줄어드는 세액. 특례 대상이 아니면 비교 자체가 없으므로 0이다.
+    saving: specialAvailable ? Math.round(Math.abs(shareRouteTotal - specialTotal)) : 0,
+    // 세대 합계 — 지분 과세는 두 사람 몫의 합, 특례는 납세의무자 1명이 전부 낸다.
+    total: Math.round(useSpecial ? specialTotal : shareRouteTotal),
+  };
+}
+
 // ══════════════════════════ 4. 양도소득세 ══════════════════════════
 // 근거: 소득세법 제89조(비과세)·제95조(장기보유특별공제)·제104조(세율), 지방세법 제103조의3
 
 const ONE_HOUSE_EXEMPT_LIMIT = 12 * 억;    // 1세대1주택 비과세 기준
 const LONG_TERM_RATE_GENERAL = 0.02;       // 표1 — 보유 1년당
 const LONG_TERM_LIMIT_GENERAL = 0.3;
+// 표1·표2 모두 보유 3년 이상부터 공제한다 (소득세법 제95조 제2항).
+const LONG_TERM_MIN_YEARS = 3;
 const LONG_TERM_RATE_ONE_HOUSE = 0.04;     // 표2 — 보유·거주 각 1년당
 const LONG_TERM_LIMIT_ONE_HOUSE = 0.8;     // 표2 — 보유분 + 거주분 합계 한도
 // 소득세법 제95조 제5항 — "공제율이 100분의 40보다 큰 경우에는 100분의 40으로 한다".
@@ -680,9 +784,9 @@ function calculateTransferIncomeTax({
   // '27·'28년의 단계별 전환율은 첨부 개편안 자료에 수치가 없어 현행 공제율을 적용한다.
   const usesTable2 = isOneHouseExempt && livingYears >= ONE_HOUSE_TABLE2_MIN_LIVING_YEARS;
   const usesResidenceOnlyRate = isReform && basisYear === BASIS_YEAR_2029 && usesTable2;
-  const longTermRateFromCurrent = isReform && !usesResidenceOnlyRate && usesTable2 && holdingYears >= 3;
+  const longTermRateFromCurrent = isReform && !usesResidenceOnlyRate && usesTable2 && holdingYears >= LONG_TERM_MIN_YEARS;
   const livedYears = Math.min(livingYears, holdingYears);
-  const longTermRate = (longTermExcludedBySurcharge || holdingYears < 3) ? 0
+  const longTermRate = (longTermExcludedBySurcharge || holdingYears < LONG_TERM_MIN_YEARS) ? 0
     : usesResidenceOnlyRate
       ? Math.min(LONG_TERM_LIMIT_ONE_HOUSE, livedYears * LONG_TERM_RATE_RESIDENCE_ONLY)
       : usesTable2
@@ -1329,6 +1433,9 @@ if (typeof module !== 'undefined' && module.exports) {
     calculateSecondaryInheritance: guarded('calculateSecondaryInheritance', calculateSecondaryInheritance),
     calculateGiftTax: guarded('calculateGiftTax', calculateGiftTax),
     calculateComprehensiveRealEstateTax: guarded('calculateComprehensiveRealEstateTax', calculateComprehensiveRealEstateTax),
+    calculateJointJongbu: guarded('calculateJointJongbu', calculateJointJongbu),
+    JOINT_ROUTE_SHARE,
+    JOINT_ROUTE_SPECIAL,
     calculateTransferIncomeTax: guarded('calculateTransferIncomeTax', calculateTransferIncomeTax),
     calculateBusinessSuccession: guarded('calculateBusinessSuccession', calculateBusinessSuccession),
     calculateWeightedNetIncome,
