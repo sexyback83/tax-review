@@ -34,6 +34,7 @@ const {
   JOINT_ROUTE_SHARE,
   JOINT_ROUTE_SPECIAL,
   calculateTransferIncomeTax,
+  calculateJointTransfer,
   calculateBusinessSuccession,
   calculateWeightedNetIncome,
   calculateUnlistedStockValue,
@@ -992,6 +993,99 @@ test('종부세 JR13: 세부담상한은 개편안에서도 현행과 같은 150
   });
   assert.equal(r.burdenCapRate, 1.5);
   assert.equal(r.burdenCapNotApplied, true);
+});
+
+// ══════════════════════════ 4-B. 양도소득세 — 공동명의 ══════════════════════════
+// 인별 과세다 (소득세법 제2조의2 제1항). 누진세율 구간과 양도소득 기본공제 250만원
+// (제103조 제1항)이 공유자 수만큼 나뉜다. 1세대1주택 고가주택 12억 판정과 장특공제율은
+// 지분으로 갈리지 않는다.
+
+test('양도세 TJ1: 부부 50:50 — 양도 20억·취득 10억·보유 10년·거주 10년·1세대1주택', () => {
+  const input = {
+    salePrice: 20 * 억, purchasePrice: 10 * 억, holdingYears: 10, livingYears: 10,
+    isOneHouseExempt: true, ownershipShare: 0.5,
+  };
+  const j = calculateJointTransfer(input);
+  // 전체 차익 10억 · 안분비율 (20−12)/20 = 40% · 본인 지분 차익 5억 → 과세대상 2억
+  // 장특 표2 보유 40% + 거주 40% = 80% → 1.6억 공제 · 기본공제 250만 → 과세표준 3,750만
+  // 1,400만×6% + 2,350만×15% = 84만 + 352.5만 = 436.5만 → 지방세 43.65만 → 480.15만
+  assert.equal(j.self.exemptRatio, 0.4);
+  assert.equal(j.self.ownedTransferGain, 5 * 억);
+  assert.equal(j.self.taxableGain, 2 * 억);
+  assert.equal(j.self.longTermRate, 0.8);
+  assert.equal(j.self.taxBase, 37500000);
+  assert.equal(j.self.finalTax, 4801500);
+  assert.equal(j.coOwner.finalTax, 4801500);
+  assert.equal(j.total, 9603000);
+  // 단독명의면 과세대상 4억 → 장특 3.2억 → 과세표준 7,750만 → 1,284만 + 지방세 = 1,412.4만
+  assert.equal(j.soloTax, 14124000);
+  assert.equal(j.saving, 4521000);
+});
+
+test('양도세 TJ2: 고가주택 12억 판정은 지분이 아니라 주택 전체 양도가액 기준이다', () => {
+  // 20억짜리 집을 절반씩 가졌다고 각자 10억으로 보아 비과세되지 않는다.
+  const j = calculateJointTransfer({
+    salePrice: 20 * 억, purchasePrice: 10 * 억, holdingYears: 10, livingYears: 10,
+    isOneHouseExempt: true, ownershipShare: 0.5,
+  });
+  assert.equal(j.self.exemptRatio, 0.4, '지분 기준으로 12억 이하가 되어 비과세 처리되면 안 된다');
+  assert.ok(j.self.taxableGain > 0);
+  // 주택 전체가 12억 이하면 지분과 무관하게 전액 비과세다.
+  const under = calculateJointTransfer({
+    salePrice: 11 * 억, purchasePrice: 5 * 억, holdingYears: 10, livingYears: 10,
+    isOneHouseExempt: true, ownershipShare: 0.5,
+  });
+  assert.equal(under.self.exemptRatio, 0);
+  assert.equal(under.total, 0);
+});
+
+test('양도세 TJ3: 양도소득 기본공제는 거주자별로 각각 250만원이다', () => {
+  const j = calculateJointTransfer({
+    salePrice: 10 * 억, purchasePrice: 5 * 억, holdingYears: 10, ownershipShare: 0.5,
+  });
+  assert.equal(j.self.basicDeduction, 250 * 만);
+  assert.equal(j.coOwner.basicDeduction, 250 * 만);
+  // 각자 차익 2.5억 → 장특 20% → 2억 → 과세표준 2억 − 250만 = 1억 9,750만
+  assert.equal(j.self.taxBase, 197500000);
+  // 단독명의(T1)는 과세표준 3억 9,750만 · 최종 1억 4,636만 6,000원이다.
+  assert.equal(j.soloTax, 146366000);
+  assert.ok(j.total < j.soloTax, '인별 과세인데 합계가 단독명의보다 작지 않다');
+  assert.equal(j.saving, j.soloTax - j.total);
+});
+
+test('양도세 TJ4: 지분율이 다르면 차익도 지분만큼 갈린다 (70:30)', () => {
+  const j = calculateJointTransfer({
+    salePrice: 20 * 억, purchasePrice: 10 * 억, holdingYears: 10, ownershipShare: 0.7,
+  });
+  assert.equal(j.self.ownedTransferGain, 7 * 억);
+  assert.equal(j.coOwner.ownedTransferGain, 3 * 억);
+  // 지분을 맞바꾼 것뿐이므로 합계는 같아야 한다
+  const flipped = calculateJointTransfer({
+    salePrice: 20 * 억, purchasePrice: 10 * 억, holdingYears: 10, ownershipShare: 0.3,
+  });
+  assert.equal(flipped.total, j.total);
+  // 한쪽으로 몰수록 누진 분산 효과가 줄어 세금이 커진다
+  const even = calculateJointTransfer({
+    salePrice: 20 * 억, purchasePrice: 10 * 억, holdingYears: 10, ownershipShare: 0.5,
+  });
+  assert.ok(even.total < j.total, '50:50이 70:30보다 총 세부담이 크면 안 된다');
+});
+
+test('양도세 TJ5: 다주택 중과는 공유자 각자에게 적용되고 장특공제는 배제된다', () => {
+  const j = calculateJointTransfer({
+    salePrice: 20 * 억, purchasePrice: 5 * 억, holdingYears: 15, surchargeHouses: 3, ownershipShare: 0.5,
+  });
+  assert.equal(j.self.surchargeRate, 0.3);
+  assert.equal(j.coOwner.surchargeRate, 0.3);
+  assert.equal(j.self.longTermDeduction, 0, '중과 대상인데 장특공제가 적용됐다');
+  assert.equal(j.self.longTermExcludedBySurcharge, true);
+});
+
+test('양도세 TJ6: 단독명의 계산에는 영향이 없다 (지분 기본값 100%)', () => {
+  const solo = calculateTransferIncomeTax({ salePrice: 10 * 억, purchasePrice: 5 * 억, holdingYears: 10 });
+  assert.equal(solo.ownershipShare, 1);
+  assert.equal(solo.ownedTransferGain, solo.transferGain);
+  assert.equal(solo.finalTax, 146366000);   // T1과 같은 값
 });
 
 // ══════════════════════════ 3-C. 종합부동산세 — 공동명의 ══════════════════════════

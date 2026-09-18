@@ -47,7 +47,7 @@ node .claude/skills/tax-review/scripts/tax.js fp 37.4979 127.0276
 - **§1 제1~8조** — 계산과 화면의 분리(법정 수치는 `calc.js` 에만), 브라우저 없는 검증,
   기대값은 법령에서 전개, 저장·전송 금지, 단순성
 - **§3 화면 불변조건 9가지** — 헤더 높이, 입력 중 재렌더 금지, 결과 진입 게이트, 부호 허용 칸 등
-- **§9 실제로 틀렸던 것 10가지** — 같은 함정을 다시 밟지 않기 위한 목록
+- **§9 실제로 틀렸던 것 11가지** — 같은 함정을 다시 밟지 않기 위한 목록
 - **§10 완료 조건**
 
 ## 고친 뒤 검증
@@ -56,10 +56,10 @@ node .claude/skills/tax-review/scripts/tax.js fp 37.4979 127.0276
 
 | 명령 | 통과 기준 |
 |---|---|
-| `node calc.test.js` | PASS 141 / FAIL 0 |
+| `node calc.test.js` | PASS 147 / FAIL 0 |
 | `node succession-industry.test.js` | PASS 7 / FAIL 0 |
 | `node fp.test.js` | 253개 단언 통과 |
-| `node audit.test.js` | 통과 46건 / 범위 제외 1건 / 결함 0건 |
+| `node audit.test.js` | 통과 48건 / 범위 제외 1건 / 결함 0건 |
 | `node oracle/calc.test.js` | 26건 PASS |
 | `node oracle/fixture-check.js` | 43 passed, 0 failed |
 | `node oracle/crosscheck-run.js` | 400 cases, 2,400 values, 0 mismatched |
@@ -71,7 +71,7 @@ node .claude/skills/tax-review/scripts/tax.js fp 37.4979 127.0276
 node .claude/skills/tax-review/scripts/tax.js selftest
 ```
 
-94건 전부 §8 자기검증 벡터와 일치해야 한다. 실행기는 `calc.js` 를 직접 `require` 하므로,
+102건 전부 §8 자기검증 벡터와 일치해야 한다. 실행기는 `calc.js` 를 직접 `require` 하므로,
 계산 결과가 바뀌면 여기서 먼저 드러난다.
 
 ## 자주 틀리는 것
@@ -85,6 +85,10 @@ node .claude/skills/tax-review/scripts/tax.js selftest
 - **`Number.isFinite` 로 결과를 검증하면 안 된다.** NaN 만 본다.
 - **`exemptRatio` 는 이름과 달리 「과세되는 안분비율」이다** (비과세가 아니면 1).
 - **`fpExpiryStatus` 는 `Date` 가 아니라 `'YYYY-MM-DD'` 문자열을 받는다.** Date 를 넘기면 조용히 NaN 이 된다.
+- **양도세 공동명의도 인별 과세다.** 지분만큼 양도차익을 나눠 각자 신고하므로 누진세율 구간이
+  사람 수만큼 나뉘고 양도소득 기본공제 250만원도 각자 받는다(소득세법 제103조 제1항). 다만
+  **1세대1주택 고가주택 12억 판정은 주택 전체 양도가액 기준**이다 — 지분으로 나눠 12억 이하라고
+  비과세가 되지 않는다. `calculateJointTransfer` 가 단독명의였을 때와 나란히 낸다. CLI 는 `--share`.
 - **종부세 공동명의는 인별 과세다.** 지분 상당액을 각자 소유한 것으로 보아 각자 9억원을 공제하고
   (종부법 제7조 제1항), 공동소유는 단독소유가 아니라 1세대1주택자가 아니므로 12억 공제도
   고령자·장기보유 세액공제도 없다(제8조 제1항). 부부가 1주택만 공동소유할 때만 제10조의2 특례로

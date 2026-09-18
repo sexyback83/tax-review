@@ -117,6 +117,33 @@ function serviceSpans(join, out) {
 
 // ══════════════════════════ 세목 ══════════════════════════
 
+// 공동명의 양도소득세 — 인별 과세라 누진세율 구간과 기본공제가 공유자 수만큼 나뉜다.
+// 단독명의였을 때를 함께 내야 절세 효과가 보인다.
+function transferJoint(f) {
+  const j = calc.calculateJointTransfer(Object.assign({
+    salePrice: won(f, 'sale'), purchasePrice: won(f, 'buy'), expenses: won(f, 'cost'),
+    holdingYears: num(f, 'hold', 0), livingYears: num(f, 'live', 0),
+    isOneHouseExempt: on(f, 'exempt', false), surchargeHouses: num(f, 'surcharge', 0),
+    ownershipShare: num(f, 'share', 50) / 100,
+  }, basisOf(f)));
+  const r = j.self;
+  print('양도소득세 (공동명의)', [
+    ['적용 기준', r.isReform ? '2026 개편안 · ' + r.basisYear + '년' : '현행'],
+    ['양도차익 (전체)', W(r.transferGain)],
+    ['본인 지분', pct(r.ownershipShare) + ' → ' + W(r.ownedTransferGain)],
+    r.exemptRatio < 1 && ['과세 안분비율', pct(r.exemptRatio)
+      + ' — 12억 판정은 지분이 아니라 주택 전체 양도가액 기준'],
+    ['본인 과세대상 차익', W(r.taxableGain)],
+    ['장기보유공제', W(r.longTermDeduction) + ' (' + pct(r.longTermRate) + (r.usesTable2 ? ', 표2' : ', 표1') + ')'],
+    ['기본공제', W(r.basicDeduction) + ' (거주자별로 각각 — 소득세법 §103①)'],
+    ['본인 과세표준', W(r.taxBase)],
+    ['본인 세액', W(r.finalTax)],
+    ['상대 공유자 세액', W(j.coOwner.finalTax)],
+    ['공유자 합계', W(j.total)],
+    ['단독명의였다면', W(j.soloTax) + ' → 공동명의가 ' + W(j.saving) + ' 유리'],
+  ]);
+}
+
 // 공동명의 종부세 — 인별 과세라 「본인」과 「세대 합계」가 다르고, 부부 1주택이면
 // 제10조의2 특례와 비교해야 해서 단독명의와 출력 구성이 갈린다.
 function jongbuJoint(f) {
@@ -303,7 +330,7 @@ const COMMANDS = {
   },
 
   transfer: {
-    desc: '양도소득세',
+    desc: '양도소득세 (--share 로 공동명의)',
     flags: [
       '--sale N        양도가액',
       '--buy N         취득가액',
@@ -312,10 +339,12 @@ const COMMANDS = {
       '--live N        거주기간(년)',
       '--exempt        1세대1주택 비과세',
       '--surcharge N   다주택 중과 (0 / 2 / 3)',
+      '--share N       공동명의 본인 지분율(%) — 넣으면 인별 과세로 계산한다',
       '--basis reform  2026 개편안 적용',
       '--year 2027|2028|2029',
     ],
     run: function (f) {
+      if (f.share !== undefined) return transferJoint(f);
       const r = calc.calculateTransferIncomeTax(Object.assign({
         salePrice: won(f, 'sale'), purchasePrice: won(f, 'buy'), expenses: won(f, 'cost'),
         holdingYears: num(f, 'hold', 0), livingYears: num(f, 'live', 0),
@@ -604,6 +633,22 @@ function selftest() {
   eq('V6 산출세액', man(v6.calculatedTax), 13306);
   eq('V6 지방소득세', man(v6.localTax), 1331);
   eq('V6 finalTax', man(v6.finalTax), 14637);
+
+  // V6-2 양도세 공동명의 — 양도 20억 · 취득 10억 · 보유 10년 · 거주 10년 · 1세대1주택 · 부부 50:50
+  // 전체 차익 10억 · 안분비율 (20−12)/20 = 40% · 본인 지분 차익 5억 → 과세대상 2억
+  // 장특 표2 80% → 1.6억 · 기본공제 250만 → 과세표준 3,750만 → 480만 1,500원
+  const v62 = calc.calculateJointTransfer({
+    salePrice: 20 * 억, purchasePrice: 10 * 억, holdingYears: 10, livingYears: 10,
+    isOneHouseExempt: true, ownershipShare: 0.5,
+  });
+  close('V6-2 과세 안분비율', v62.self.exemptRatio, 0.4);
+  eq('V6-2 본인 지분 차익', man(v62.self.ownedTransferGain), 50000);
+  eq('V6-2 본인 과세대상', man(v62.self.taxableGain), 20000);
+  eq('V6-2 본인 과세표준', man(v62.self.taxBase), 3750);
+  eq('V6-2 본인 세액', man(v62.self.finalTax), 480);
+  eq('V6-2 공유자 합계', man(v62.total), 960);
+  eq('V6-2 단독명의', man(v62.soloTax), 1412);
+  eq('V6-2 절감액', man(v62.saving), 452);
 
   // V7 비상장주식 — 순자산 50억 · 순손익 10/8/6억 · 10,000주 · 최대주주 할증
   const weighted = calc.calculateWeightedNetIncome([10 * 억, 8 * 억, 6 * 억]);

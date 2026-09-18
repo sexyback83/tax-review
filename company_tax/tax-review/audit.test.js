@@ -31,6 +31,7 @@ const {
   calculateComprehensiveRealEstateTax,
   calculateJointJongbu,
   calculateTransferIncomeTax,
+  calculateJointTransfer,
   calculateBusinessSuccession,
   calculateWeightedNetIncome,
   calculateUnlistedStockValue,
@@ -376,6 +377,48 @@ audit('A-16', '부부 공동명의 1주택자 특례는 단독명의 1세대1주
       isSpouseJoint: false,
     });
     assert.equal(other.special, null, '배우자가 아닌 공유자에게 제10조의2 특례가 적용됐다');
+  });
+
+audit('A-17', '공유 자산의 양도소득세는 지분별로 인별 과세하고 기본공제를 각자 적용한다',
+  '소득세법 제2조의2 제1항(양도소득세 납세의무는 거주자별로 진다) · 제103조 제1항(양도소득 기본공제는 '
+  + '거주자별로 해당 과세기간의 양도소득금액에서 연 250만원을 공제한다) · 제104조 제1항(과세표준에 누진세율 적용) '
+  + '(조사일 2026-09-18)', () => {
+    // 양도 10억 · 취득 5억 · 보유 10년 · 부부 50:50
+    //   전체 차익 5억 → 각자 2.5억 · 장특공제 표1 20% → 각자 5,000만 공제 → 2억
+    //   기본공제 250만 → 각자 과세표준 1억 9,750만
+    const j = calculateJointTransfer({
+      salePrice: 10 * 억, purchasePrice: 5 * 억, holdingYears: 10, ownershipShare: 0.5,
+    });
+    assert.equal(j.self.ownedTransferGain, 2.5 * 억, '양도차익이 지분대로 나뉘지 않았다');
+    assert.equal(j.self.basicDeduction, 250 * 만);
+    assert.equal(j.coOwner.basicDeduction, 250 * 만, '기본공제가 공유자 한 사람에게만 적용됐다');
+    assert.equal(j.self.taxBase, 197500000);
+
+    // 누진세율이 사람 수만큼 나뉘므로 합계는 단독명의보다 작아야 한다.
+    assert.ok(j.total < j.soloTax,
+      `공동명의 합계 ${j.total}이 단독명의 ${j.soloTax}보다 작지 않다 — 인별 과세가 반영되지 않았다`);
+  });
+
+audit('A-18', '1세대1주택 고가주택 판정은 지분이 아니라 주택 전체 양도가액 기준이다',
+  '소득세법 제89조 제1항 제3호(고가주택은 비과세에서 제외) · 같은 법 시행령 제156조 제1항(고가주택은 주택과 '
+  + '그 부수토지의 양도당시 실지거래가액 합계액이 12억원을 초과하는 것 — 공동소유인 경우에도 주택 전체를 '
+  + '기준으로 판단한다) · 시행령 제160조 제1항(과세대상 양도차익 = 양도차익 × (양도가액 − 12억원) ÷ 양도가액) '
+  + '(조사일 2026-09-18)', () => {
+    // 20억 주택을 부부가 절반씩 — 각자 10억이지만 12억 이하로 보아 비과세되지 않는다.
+    const j = calculateJointTransfer({
+      salePrice: 20 * 억, purchasePrice: 10 * 억, holdingYears: 10, livingYears: 10,
+      isOneHouseExempt: true, ownershipShare: 0.5,
+    });
+    assert.equal(j.self.exemptRatio, 0.4,
+      '지분 상당액(10억)으로 12억을 판정해 비과세가 됐다 — 판정은 주택 전체 양도가액 기준이다');
+    assert.equal(j.self.taxableGain, 2 * 억, '과세대상 = 지분 차익 5억 × 안분비율 40%');
+
+    // 주택 전체가 12억 이하이면 지분과 무관하게 전액 비과세다.
+    const under = calculateJointTransfer({
+      salePrice: 12 * 억, purchasePrice: 5 * 억, holdingYears: 10, livingYears: 10,
+      isOneHouseExempt: true, ownershipShare: 0.5,
+    });
+    assert.equal(under.total, 0);
   });
 
 // ══════════════════════════ B. 법정 규칙 준수 ══════════════════════════
