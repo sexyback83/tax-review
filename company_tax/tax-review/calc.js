@@ -8,8 +8,7 @@
 //   · 반올림은 각 오케스트레이션 함수에서 출력 필드에 1회만 적용한다.
 //     중간 공제·비율 계산은 반올림하지 않는다.
 //   · "심화" 전용 인자는 모두 중립 기본값을 가진다. 간편 모드는 인자를 넘기지 않는 것만으로 동작한다.
-//     예외적으로 아래 두 값은 간편 모드의 법정 기본 가정이므로 기본값이 중립이 아니다.
-//       - 비상장주식: 최대주주 20% 할증 적용 (hasMaxShareholderPremium = true)
+//     예외적으로 아래 값은 간편 모드의 법정 기본 가정이므로 기본값이 중립이 아니다.
 //       - 급여·배당: 법인세율 20%, 4대보험 반영 (corporateTaxRate = 0.20, includeInsurance = true)
 
 const 억 = 100000000;
@@ -884,14 +883,33 @@ function calculateBusinessSuccession({
 }
 
 // ══════════════════════════ 6. 비상장주식 평가 ══════════════════════════
-// 근거: 상속세및증여세법 시행령 제54조(비상장주식 평가)·제53조(최대주주 할증)
+// 근거: 상속세및증여세법 제63조 제3항(최대주주 등 보유주식 할증평가)
+//       같은 법 시행령 제53조(할증 제외사유)·제54조(비상장주식 평가)·제56조(순손익액)
 
-const CAPITALIZATION_RATE = 0.1;           // 순손익가치 환원율
-const NET_ASSET_FLOOR_RATIO = 0.8;         // 순자산가치 하한
-const MAX_SHAREHOLDER_PREMIUM = 1.2;       // 최대주주 20% 할증
+const CAPITALIZATION_RATE = 0.1;           // 순손익가치 환원율 (상증령 제54조 제1항)
+const NET_ASSET_FLOOR_RATIO = 0.8;         // 순자산가치 하한 (상증령 제54조 제1항 단서)
+
+// 최대주주와 그 특수관계인이 보유한 주식은 평가액에 20%를 가산한다 (상증법 제63조 제3항).
+// 할증률은 2019.12.31. 개정으로 지분율·기업규모와 무관하게 20% 하나로 일원화됐다.
+//
+// 「할증이 폐지됐다」고 알려진 것은 2024년 정부 세법개정안(제63조 제3항 삭제)인데,
+// 그 상증세법 개정안은 2024.12.10. 국회 본회의에서 부결돼 조문은 그대로 남아 있다.
+// 2026년 세제개편안('26.8.3.)에도 폐지는 없다 — 오히려 최대주주 주식 평가를 강화하는 쪽이다.
+//
+// 다만 같은 항이 아래를 할증 대상에서 **제외**하므로, 이 도구가 다루는 상담 대상
+// (중소기업 오너)은 대부분 할증이 붙지 않는다. 그래서 기본값은 미적용이고,
+// 할증은 제외 대상이 아님을 확인한 뒤에만 켠다.
+//   · 중소기업이 발행한 주식 — 2019.12.31. 개정으로 영구 배제(종전 조특법 제101조 한시 배제)
+//   · 중견기업이 발행한 주식 — 직전 3개 사업연도 평균 매출액 5,000억원 미만
+//   · 평가기준일이 속하는 사업연도 전 3년 이내의 사업연도부터 계속하여 결손금이 있는 법인
+//   · 그 밖에 시행령 제53조 제7항의 제외사유 — 전부 매각·합병·청산 확정 등
+const MAX_SHAREHOLDER_PREMIUM = 1.2;
 
 // 최근 3년 순손익액의 가중평균 (상증법 시행령 제56조 제1항 제1호)
 //   = (평가기준일 1년 전 × 3 + 2년 전 × 2 + 3년 전 × 1) ÷ 6
+// 결손 연도는 음수를 그대로 넣는다. 0원 하한은 개별 연도가 아니라 「1주당 가중평균액」에
+// 걸리는 것이므로(제56조 제1항) 여기서 자르지 않고 calculateUnlistedStockValue에서 적용한다.
+// 이 값 자체는 결손 사실을 그대로 보여 주는 숫자여야 한다 — 미리 0으로 만들면 화면에서 가려진다.
 const NET_INCOME_WEIGHTS = [3, 2, 1];
 const NET_INCOME_WEIGHT_SUM = 6;
 
@@ -908,11 +926,15 @@ function calculateUnlistedStockValue({
   // 상증법 시행령 제54조 제4항 — 사업개시 3년 미만, 휴·폐업, 청산 중,
   // 자산총액 중 부동산등 비율 80% 이상인 법인은 순자산가치만으로 평가한다.
   netAssetOnly = false,
-  hasMaxShareholderPremium = true,
+  // 상증법 제63조 제3항 — 할증 제외 대상이 아님을 확인했을 때만 켠다(위 상수 주석 참고).
+  hasMaxShareholderPremium = false,
 }) {
   const shares = Math.max(1, totalShares);
   const netAssetPerShare = netAsset / shares;
-  const incomePerShare = (weightedIncome / shares) / CAPITALIZATION_RATE;
+  // 상증령 제56조 제1항 — 1주당 최근 3년간 순손익액의 가중평균액이 0원 이하이면 0원으로 본다.
+  // 결손이어도 순손익가치가 음수로 내려가 순자산가치를 깎지는 않는다.
+  const incomePerShareRaw = (weightedIncome / shares) / CAPITALIZATION_RATE;
+  const incomePerShare = Math.max(0, incomePerShareRaw);
 
   // 부동산 과다보유 법인은 순손익2 : 순자산3으로 가중치가 역전된다.
   const weightedValue = isRealtyHeavy
@@ -928,6 +950,9 @@ function calculateUnlistedStockValue({
   return {
     netAssetPerShare: Math.round(netAssetPerShare),
     incomePerShare: Math.round(incomePerShare),
+    // 0원으로 본 순손익가치의 원래 값 — 화면이 「결손이라 0원으로 봤다」를 설명할 수 있게 남긴다.
+    incomePerShareRaw: Math.round(incomePerShareRaw),
+    isIncomeZeroFloored: incomePerShareRaw < 0,
     weightedValue: Math.round(weightedValue),
     floorValue: Math.round(floorValue),
     netAssetOnly,

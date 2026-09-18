@@ -312,13 +312,14 @@ const COMMANDS = {
     desc: '비상장주식 평가',
     flags: [
       '--net-asset N  순자산가액',
-      '--inc1 N       순손익액 1년 전',
+      '--inc1 N       순손익액 1년 전 (결손은 음수로: --inc1 -30000)',
       '--inc2 N       2년 전',
       '--inc3 N       3년 전',
       '--shares N     발행주식 총수(주, 기본 10000)',
       '--net-only     순자산가치만 평가',
       '--realty       부동산 과다보유 법인',
-      '--no-premium   최대주주 할증 미적용 (기본 20% 할증)',
+      '--premium      최대주주 20% 할증 적용 (기본 미적용 — 상증법 §63③은 중소·중견기업과',
+      '               3년 계속 결손법인을 할증 대상에서 제외한다)',
     ],
     run: function (f) {
       const weighted = calc.calculateWeightedNetIncome([won(f, 'inc1'), won(f, 'inc2'), won(f, 'inc3')]);
@@ -326,17 +327,18 @@ const COMMANDS = {
         netAsset: won(f, 'net-asset'), weightedIncome: weighted,
         totalShares: num(f, 'shares', 10000),
         isRealtyHeavy: on(f, 'realty', false), netAssetOnly: on(f, 'net-only', false),
-        hasMaxShareholderPremium: on(f, 'premium', true),
+        hasMaxShareholderPremium: on(f, 'premium', false),
       });
       print('비상장주식 평가', [
         ['가중평균 순손익액', W(weighted)],
         ['주당 순자산가치', W(r.netAssetPerShare)],
-        ['주당 순손익가치', W(r.incomePerShare)],
+        ['주당 순손익가치', W(r.incomePerShare)
+          + (r.isIncomeZeroFloored ? ' — 가중평균이 음수(' + W(r.incomePerShareRaw) + ')라 0원 (상증령 §56①)' : '')],
         ['가중평균', W(r.weightedValue)],
         ['하한 (순자산 80%)', W(r.floorValue) + (r.isFloorApplied ? ' — 적용됨' : '')],
         ['주당 평가액', W(r.valuePerShare)],
-        ['최대주주 할증', '×' + r.premiumRate],
-        ['할증 후 주당', W(r.pricePerShare)],
+        ['최대주주 할증', '×' + r.premiumRate + (r.premiumRate === 1 ? ' — 미적용 (상증법 §63③ 제외 대상)' : '')],
+        ['최종 주당 평가액', W(r.pricePerShare)],
         ['총 평가액', W(r.totalValue) + ' (' + r.totalShares.toLocaleString('ko-KR') + '주)'],
       ]);
     },
@@ -574,7 +576,9 @@ function selftest() {
   // V7 비상장주식 — 순자산 50억 · 순손익 10/8/6억 · 10,000주 · 최대주주 할증
   const weighted = calc.calculateWeightedNetIncome([10 * 억, 8 * 억, 6 * 억]);
   eq('V7 가중평균 순손익액', man(weighted), 86667);
-  const v7 = calc.calculateUnlistedStockValue({ netAsset: 50 * 억, weightedIncome: weighted, totalShares: 10000 });
+  const v7 = calc.calculateUnlistedStockValue({
+    netAsset: 50 * 억, weightedIncome: weighted, totalShares: 10000, hasMaxShareholderPremium: true,
+  });
   eq('V7 순자산가치', man(v7.netAssetPerShare), 50);
   eq('V7 순손익가치', man(v7.incomePerShare), 87);
   eq('V7 가중평균', man(v7.weightedValue), 72);
@@ -583,6 +587,23 @@ function selftest() {
   close('V7 할증률', v7.premiumRate, 1.2);
   eq('V7 할증 후 주당', man(v7.pricePerShare), 86);
   eq('V7 총액', man(v7.totalValue), 864000);
+  // 할증은 상증법 §63③의 제외 대상(중소·중견기업 등)이 아닐 때만 켠다 — 지정하지 않으면 붙지 않는다.
+  const v7n = calc.calculateUnlistedStockValue({ netAsset: 50 * 억, weightedIncome: weighted, totalShares: 10000 });
+  close('V7-1 할증률(기본)', v7n.premiumRate, 1);
+  eq('V7-1 주당 평가액', man(v7n.pricePerShare), 72);
+  eq('V7-1 총액', man(v7n.totalValue), 720000);
+
+  // V7-2 결손 법인 — 순자산 20억 · 순손익 -6/0/+3억 · 10,000주
+  // 가중평균 (-18억 + 3억) ÷ 6 = -2.5억 → 1주당 순손익가치는 0원 (상증령 §56①)
+  const weightedLoss = calc.calculateWeightedNetIncome([-6 * 억, 0, 3 * 억]);
+  eq('V7-2 가중평균 순손익액', man(weightedLoss), -25000);
+  const v72 = calc.calculateUnlistedStockValue({ netAsset: 20 * 억, weightedIncome: weightedLoss, totalShares: 10000 });
+  eq('V7-2 순자산가치', man(v72.netAssetPerShare), 20);
+  eq('V7-2 순손익가치', man(v72.incomePerShare), 0);
+  eq('V7-2 가중평균', man(v72.weightedValue), 8);
+  eq('V7-2 하한(순자산 80%)', man(v72.floorValue), 16);
+  eq('V7-2 주당 평가액', man(v72.pricePerShare), 16);
+  eq('V7-2 총액', man(v72.totalValue), 160000);
 
   // V8 급여·배당 — 급여 1.2억 · 배당 3,000만원 · 4대보험 반영
   const v8 = calc.calculateSalaryDividendCompare({ salary: 1.2 * 억, dividend: 3000 * MANWON, includeInsurance: true }).withDividend;

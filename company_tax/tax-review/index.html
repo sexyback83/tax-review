@@ -1213,14 +1213,15 @@ const ITEMS = [
         hint: '상증법에 따라 평가한 자산총계에서 부채총계를 뺀 금액입니다.',
       },
       {
-        k: 'inc1', label: '순손익액 — 1년 전', unit: '만원', sec: '최근 3년 순손익액',
+        k: 'inc1', label: '순손익액 — 1년 전', unit: '만원', sec: '최근 3년 순손익액', signed: true,
         hint: [
           '상증법 시행령 제56조 — 가중평균 = (1년 전 × 3 + 2년 전 × 2 + 3년 전 × 1) ÷ 6',
-          '결손인 연도는 0으로 입력하세요. 음수는 입력할 수 없습니다.',
+          '결손인 연도는 -30000처럼 앞에 빼기표를 붙여 음수로 입력하세요.',
+          '가중평균이 음수가 되면 1주당 순손익가치는 0원으로 봅니다 (같은 조 제1항).',
         ],
       },
-      { k: 'inc2', label: '순손익액 — 2년 전', unit: '만원' },
-      { k: 'inc3', label: '순손익액 — 3년 전', unit: '만원' },
+      { k: 'inc2', label: '순손익액 — 2년 전', unit: '만원', signed: true },
+      { k: 'inc3', label: '순손익액 — 3년 전', unit: '만원', signed: true },
       {
         k: 'weighted', label: '가중평균 순손익액', type: 'readonly', unit: '만원',
         value: (g) => N(Math.round(weightedIncomeOf(g) / MANWON)),
@@ -1248,10 +1249,11 @@ const ITEMS = [
         ],
       },
       {
-        k: 'premium', label: '최대주주 할증', type: 'choice', opts: ['없음', '20% 할증'], def: '20% 할증', adv: true,
+        k: 'premium', label: '최대주주 할증', type: 'choice', opts: ['없음', '20% 할증'], def: '없음', adv: true,
         hint: [
-          '상증법 제63조 제3항 — 최대주주와 그 특수관계인이 보유한 주식은 20%를 가산합니다.',
-          '중소기업 주식은 할증 대상이 아니므로 「없음」을 선택하세요.',
+          '상증법 제63조 제3항 — 최대주주와 그 특수관계인의 주식은 20%를 가산하되, 아래는 제외합니다.',
+          '① 중소기업 ② 중견기업(직전 3개 사업연도 평균 매출액 5,000억원 미만) ③ 평가기준일이 속하는 사업연도 전 3년 이내의 사업연도부터 계속 결손인 법인',
+          '상담 대상 대부분이 제외 대상이므로 기본값은 「없음」입니다. 제외 대상이 아님을 확인한 경우에만 「20% 할증」을 선택하세요.',
         ],
       },
     ],
@@ -1271,19 +1273,32 @@ const ITEMS = [
       if (netOnly) {
         steps.push(['1주당 평가액', E(r.valuePerShare), '순자산가치 단독평가 — 가중평균·80% 하한 미적용']);
       } else {
-        steps.push(['1주당 순손익가치', E(r.incomePerShare), '가중평균 순손익액 ÷ 주식수 ÷ 10%']);
+        steps.push(['1주당 순손익가치', E(r.incomePerShare), r.isIncomeZeroFloored
+          ? '가중평균이 음수(' + E(r.incomePerShareRaw) + ')이므로 0원으로 봄 — 상증령 제56조 제1항'
+          : '가중평균 순손익액 ÷ 주식수 ÷ 10%']);
         steps.push(['가중평균', E(r.weightedValue), realty ? '부동산 과다법인 — 순손익 2 : 순자산 3' : '순손익 3 : 순자산 2']);
         steps.push(['순자산가치 80% 하한', E(r.floorValue), r.isFloorApplied ? '하한이 적용됨' : '하한 미달 없음']);
       }
-      if (r.premiumRate > 1) steps.push(['최대주주 할증', '× ' + r.premiumRate, '20% 할증 적용']);
+      if (r.premiumRate > 1) steps.push(['최대주주 할증', '× ' + r.premiumRate, '20% 할증 적용 — 상증법 제63조 제3항']);
       steps.push(['1주당 평가액 (최종)', E(r.pricePerShare), '']);
       steps.push(['발행주식 ' + N(r.totalShares) + '주 전체 평가액', W(r.totalValue),
         '법인 주식 총가액 · 개인별 보유분은 1주당 ' + E(r.pricePerShare) + ' × 보유주식수']);
 
+      const incomes = [g.num('inc1'), g.num('inc2'), g.num('inc3')];
       const notes = [];
       if (netOnly) notes.push('순자산가치 단독평가를 선택했으므로 최근 3년 순손익액은 평가액에 반영되지 않습니다.');
-      if (!netOnly && [g.num('inc1'), g.num('inc2'), g.num('inc3')].some((v) => v === 0)) {
-        notes.push('순손익액이 0인 연도가 있습니다. 실제로 결손인 해라면 결손금만큼의 순손익가치 하락이 반영되지 않으므로 평가액이 높게 나옵니다. 순자산가치 단독평가 요건을 함께 검토하세요.');
+      if (!netOnly && r.isIncomeZeroFloored) {
+        notes.push('1주당 순손익액의 가중평균이 음수여서 순손익가치를 0원으로 보았습니다 (상증령 제56조 제1항). 결손금이 클수록 순자산가치 80% 하한이 평가액을 결정합니다.');
+      }
+      if (!netOnly && incomes.some((v) => v < 0)) {
+        notes.push('결손 연도가 있습니다. 평가기준일이 속하는 사업연도 전 3년 이내의 사업연도부터 계속 결손이면 최대주주 할증 대상에서 제외되고(상증법 제63조 제3항), 휴·폐업 등에 해당하면 순자산가치 단독평가 대상이 될 수 있습니다.');
+      }
+      // 이미 음수를 넣은 상담자는 결손 입력법을 알고 있다 — 그때는 0을 두고 안내하지 않는다.
+      if (!netOnly && incomes.some((v) => v === 0) && !incomes.some((v) => v < 0)) {
+        notes.push('순손익액이 0인 연도가 있습니다. 실제로 결손인 해라면 그 금액을 음수로 입력해야 순손익가치 하락이 반영됩니다.');
+      }
+      if (r.premiumRate === 1) {
+        notes.push('최대주주 할증(20%)을 적용하지 않은 금액입니다. 중소기업·중견기업(평균 매출액 5,000억원 미만)·3년 계속 결손법인 등 상증법 제63조 제3항의 제외 대상이 아니라면 심화 모드에서 할증을 켜고 다시 계산하세요.');
       }
       return {
         total: r.totalValue, label: '비상장주식 평가액', sub: '1주당 ' + E(r.pricePerShare),
@@ -2932,14 +2947,19 @@ document.addEventListener('input', (e) => {
   if (kind === 'val') {
     const key = el.dataset.k;
     const typed = el.value;
+    // 결손을 받아야 하는 칸(순손익액)만 앞자리 빼기표를 허용한다. signed 로 표시한다.
+    const field = allFields().find((f) => f.k === key);
+    const signed = !!(field && field.signed);
     // 천단위 구분기호·공백은 서식으로 보아 제거한다.
     const digits = typed.replace(/[,\s]/g, '');
-    // 부호·소수점·문자는 거부한다. 해당 문자만 지우면 값이 조용히 왜곡되므로
-    // (-50000 → 50000, 12.5 → 125) 입력 자체를 되돌리고 사유를 표시한다.
-    if (!/^[0-9]*$/.test(digits)) {
+    // 소수점·문자와 (부호를 받지 않는 칸의) 빼기표는 거부한다. 해당 문자만 지우면 값이
+    // 조용히 왜곡되므로 (-50000 → 50000, 12.5 → 125) 입력 자체를 되돌리고 사유를 표시한다.
+    if (!(signed ? /^-?[0-9]*$/ : /^[0-9]*$/).test(digits)) {
       const prev = state.vals[key] === undefined ? '' : state.vals[key];
       el.value = withCommas(prev);
-      setFieldError(key, el, '0 이상의 정수만 입력할 수 있습니다. 음수·소수점·문자는 사용할 수 없습니다.');
+      setFieldError(key, el, signed
+        ? '정수만 입력할 수 있습니다. 결손은 -30000처럼 맨 앞에 빼기표를 한 번만 붙이고, 소수점·문자는 쓸 수 없습니다.'
+        : '0 이상의 정수만 입력할 수 있습니다. 음수·소수점·문자는 사용할 수 없습니다.');
       return;
     }
     setFieldError(key, el, '');
@@ -2955,13 +2975,16 @@ document.addEventListener('input', (e) => {
     }
 
     // 콤마를 다시 붙이면 문자열 길이가 바뀌므로, 커서 앞의 "숫자 개수"를 기준으로 위치를 복원한다.
-    const digitsBeforeCaret = typed.slice(0, el.selectionStart).replace(/[^0-9]/g, '').length;
+    // 빼기표도 한 자리로 센다 — 세지 않으면 '-' 바로 뒤에서 커서가 부호 앞으로 튄다.
+    const kept = (c) => c === '-' || (c >= '0' && c <= '9');
+    let charsBeforeCaret = 0;
+    for (const c of typed.slice(0, el.selectionStart)) if (kept(c)) charsBeforeCaret += 1;
     const formatted = withCommas(digits);
     if (el.value !== formatted) {
       el.value = formatted;
       let pos = 0, seen = 0;
-      while (pos < formatted.length && seen < digitsBeforeCaret) {
-        if (formatted[pos] >= '0' && formatted[pos] <= '9') seen += 1;
+      while (pos < formatted.length && seen < charsBeforeCaret) {
+        if (kept(formatted[pos])) seen += 1;
         pos += 1;
       }
       el.setSelectionRange(pos, pos);
