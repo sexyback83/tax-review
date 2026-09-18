@@ -1246,10 +1246,14 @@ test('가업승계 SU3: 사업무관자산 제외는 증여세 과세특례 과�
 
 // ══════════════════════════ 6. 비상장주식 평가 ══════════════════════════
 // 순손익가치 = 1주당 순손익액 ÷ 10%, 가중평균 순손익3:순자산2 (부동산과다법인 2:3)
-// 순자산가치의 80%를 하한으로 하고, 최대주주는 20% 할증
+// 순자산가치의 80%를 하한으로 한다.
+// 최대주주 할증 20%(상증법 제63조 제3항)는 제외 대상(중소·중견기업, 3년 계속 결손법인 등)이
+// 상담 대상 대부분이므로 기본값이 미적용이다. 할증을 보는 사례는 인자로 명시해서 켠다.
 
 test('비상장주식 K1: 순자산 100억 / 순손익 10억 / 10만주, 최대주주 할증', () => {
-  const r = calculateUnlistedStockValue({ netAsset: 100 * 억, weightedIncome: 10 * 억, totalShares: 100000 });
+  const r = calculateUnlistedStockValue({
+    netAsset: 100 * 억, weightedIncome: 10 * 억, totalShares: 100000, hasMaxShareholderPremium: true,
+  });
   assert.equal(r.netAssetPerShare, 100000);   // 100억 ÷ 10만주
   assert.equal(r.incomePerShare, 100000);     // (10억 ÷ 10만주) ÷ 10%
   assert.equal(r.weightedValue, 100000);      // (10만×3 + 10만×2) ÷ 5
@@ -1258,7 +1262,9 @@ test('비상장주식 K1: 순자산 100억 / 순손익 10억 / 10만주, 최대�
 });
 
 test('비상장주식 K2: 순손익이 낮으면 순자산가치 80% 하한이 적용된다', () => {
-  const r = calculateUnlistedStockValue({ netAsset: 100 * 억, weightedIncome: 1 * 억, totalShares: 100000 });
+  const r = calculateUnlistedStockValue({
+    netAsset: 100 * 억, weightedIncome: 1 * 억, totalShares: 100000, hasMaxShareholderPremium: true,
+  });
   assert.equal(r.incomePerShare, 10000);      // (1억 ÷ 10만주) ÷ 10%
   assert.equal(r.weightedValue, 46000);       // (1만×3 + 10만×2) ÷ 5
   assert.equal(r.floorValue, 80000);          // 10만 × 80%
@@ -1282,21 +1288,23 @@ test('비상장주식 K4: 평가 대상은 발행주식 전체다 (법인 주식
   // 이 세목의 산출물은 1주당 평가액이고, 총액은 발행주식 전체 기준이다.
   // 개인별 보유분 가액은 1주당 평가액 × 보유주식수로 상속세·증여세 항목에서 다룬다.
   const r = calculateUnlistedStockValue({
-    netAsset: 100 * 억, weightedIncome: 10 * 억, totalShares: 100000,
+    netAsset: 100 * 억, weightedIncome: 10 * 억, totalShares: 100000, hasMaxShareholderPremium: true,
   });
   assert.equal(r.totalShares, 100000);
   assert.equal(r.pricePerShare, 120000);
   assert.equal(r.totalValue, 12000000000);    // 12만 × 10만주
   // 주식수가 배로 늘면 1주당 가액은 반이 되고 총액은 같다
   const half = calculateUnlistedStockValue({
-    netAsset: 100 * 억, weightedIncome: 10 * 억, totalShares: 200000,
+    netAsset: 100 * 억, weightedIncome: 10 * 억, totalShares: 200000, hasMaxShareholderPremium: true,
   });
   assert.equal(half.pricePerShare, 60000);
   assert.equal(half.totalValue, 12000000000);
 });
 
 test('비상장주식 K5: 순손익 0(결손) — 하한이 평가액을 결정한다', () => {
-  const r = calculateUnlistedStockValue({ netAsset: 50 * 억, weightedIncome: 0, totalShares: 10000 });
+  const r = calculateUnlistedStockValue({
+    netAsset: 50 * 억, weightedIncome: 0, totalShares: 10000, hasMaxShareholderPremium: true,
+  });
   assert.equal(r.netAssetPerShare, 500000);
   assert.equal(r.weightedValue, 200000);      // (0×3 + 50만×2) ÷ 5
   assert.equal(r.valuePerShare, 400000);      // 하한 50만 × 80%
@@ -1319,6 +1327,7 @@ test('비상장주식 K7: 순자산가치 단독평가는 가중평균도 80% �
   // 상증령 제54조 제4항 — 사업개시 3년 미만·휴폐업·청산 중·부동산등 80% 이상
   const r = calculateUnlistedStockValue({
     netAsset: 100 * 억, weightedIncome: 10 * 억, totalShares: 100000, netAssetOnly: true,
+    hasMaxShareholderPremium: true,
   });
   assert.equal(r.netAssetPerShare, 100000);   // 100억 ÷ 10만주
   assert.equal(r.valuePerShare, 100000);      // 순자산가치 그대로
@@ -1334,6 +1343,44 @@ test('비상장주식 K8: 단독평가는 순손익이 커도 순자산가치를
   const only = calculateUnlistedStockValue(Object.assign({}, base, { netAssetOnly: true }));
   assert.equal(weighted.valuePerShare, 640000);
   assert.equal(only.valuePerShare, 100000);
+});
+
+test('비상장주식 K9: 결손이면 1주당 순손익가치를 0원으로 본다 (상증령 제56조 제1항)', () => {
+  // 순손익 -3억 / -2억 / +1억 → 가중평균 (-9 -4 +1)억 ÷ 6 = -2억
+  const weighted = calculateWeightedNetIncome([-3 * 억, -2 * 억, 1 * 억]);
+  assert.equal(weighted, -2 * 억);
+  const r = calculateUnlistedStockValue({ netAsset: 50 * 억, weightedIncome: weighted, totalShares: 10000 });
+  assert.equal(r.incomePerShareRaw, -200000);  // (-2억 ÷ 1만주) ÷ 10%
+  assert.equal(r.incomePerShare, 0);           // 0원 이하이면 0원
+  assert.equal(r.isIncomeZeroFloored, true);
+  assert.equal(r.netAssetPerShare, 500000);
+  assert.equal(r.weightedValue, 200000);       // (0×3 + 50만×2) ÷ 5
+  assert.equal(r.valuePerShare, 400000);       // 하한 50만 × 80%
+  assert.equal(r.totalValue, 4000000000);      // 40만 × 1만주 — 할증 없음이 기본
+  // 결손이 더 깊어져도 평가액이 하한 아래로 내려가지 않는다
+  const worse = calculateUnlistedStockValue({ netAsset: 50 * 억, weightedIncome: -100 * 억, totalShares: 10000 });
+  assert.equal(worse.valuePerShare, 400000);
+});
+
+test('비상장주식 K10: 가중평균 순손익액은 결손을 음수 그대로 낸다', () => {
+  // 0원 하한은 1주당 가액 단계에서 걸린다. 이 함수가 미리 자르면 화면에서 결손이 가려진다.
+  assert.equal(calculateWeightedNetIncome([0, -6 * 억, 0]), -2 * 억);
+  assert.equal(calculateWeightedNetIncome([-1 * 억, -1 * 억, -1 * 억]), -1 * 억);
+  // 최근 연도 가중치가 3이므로 최근 결손이 가중평균을 더 끌어내린다
+  assert.ok(calculateWeightedNetIncome([-6 * 억, 0, 0]) < calculateWeightedNetIncome([0, 0, -6 * 억]));
+});
+
+test('비상장주식 K11: 최대주주 할증은 기본값이 미적용이다 (상증법 제63조 제3항 제외 대상)', () => {
+  // 중소기업·중견기업·3년 계속 결손법인은 할증 대상에서 제외된다. 상담 대상 대부분이 여기 해당하므로
+  // 인자를 넘기지 않으면 할증이 붙지 않아야 한다 — 붙으면 평가액이 20% 과대계상된다.
+  const base = { netAsset: 100 * 억, weightedIncome: 10 * 억, totalShares: 100000 };
+  const plain = calculateUnlistedStockValue(base);
+  assert.equal(plain.premiumRate, 1);
+  assert.equal(plain.pricePerShare, 100000);
+  assert.equal(plain.pricePerShare, plain.valuePerShare);
+  const premium = calculateUnlistedStockValue(Object.assign({}, base, { hasMaxShareholderPremium: true }));
+  assert.equal(premium.premiumRate, 1.2);
+  assert.equal(premium.pricePerShare, 120000);
 });
 
 // ══════════════════════════ 7. 급여 및 배당 ══════════════════════════

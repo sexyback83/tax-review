@@ -31,6 +31,7 @@ const {
   calculateComprehensiveRealEstateTax,
   calculateTransferIncomeTax,
   calculateBusinessSuccession,
+  calculateWeightedNetIncome,
   calculateUnlistedStockValue,
   calculateSalaryDividendCompare,
   calculateDividendTax,
@@ -264,6 +265,68 @@ audit('A-11', '퇴직소득 근속연수공제·환산급여공제가 소득세�
     // 근속 5년 = 100만 × 5 = 500만
     const r5 = calculateExecutiveSeveranceTax({ averagePay: 10 * 억, serviceYears: 5, payMultiple: 2 });
     assert.equal(r5.yearsDeduction, 500 * 만, '근속 5년 → 500만');
+  });
+
+audit('A-12', '비상장주식 1주당 평가액이 상증령 제54조의 가중평균·하한과 일치한다',
+  '상증법 시행령 제54조 제1항 — 1주당 순손익가치(1주당 순손익액 ÷ 환원율 10%)와 1주당 순자산가치를 '
+  + '3:2(부동산 과다보유 법인은 2:3)로 가중평균하고, 순자산가치의 80%를 하한으로 한다 (조사일 2026-09-18)', () => {
+    // 순자산 100억 · 가중평균 순손익 8억 · 10만주
+    //   1주당 순자산가치 = 100억 ÷ 10만주 = 100,000원
+    //   1주당 순손익가치 = (8억 ÷ 10만주) ÷ 0.1 = 8,000 ÷ 0.1 = 80,000원
+    //   가중평균 = (80,000 × 3 + 100,000 × 2) ÷ 5 = 88,000원  (하한 80,000원보다 크다)
+    const r = calculateUnlistedStockValue({ netAsset: 100 * 억, weightedIncome: 8 * 억, totalShares: 100000 });
+    assert.equal(r.netAssetPerShare, 100000);
+    assert.equal(r.incomePerShare, 80000, '환원율 10%로 자본환원되지 않았다');
+    assert.equal(r.weightedValue, 88000, '가중치가 순손익 3 : 순자산 2가 아니다');
+    assert.equal(r.floorValue, 80000, '하한이 순자산가치의 80%가 아니다');
+    assert.equal(r.valuePerShare, 88000);
+
+    // 부동산 과다보유 법인은 2:3 → (80,000 × 2 + 100,000 × 3) ÷ 5 = 92,000원
+    const realty = calculateUnlistedStockValue({
+      netAsset: 100 * 억, weightedIncome: 8 * 억, totalShares: 100000, isRealtyHeavy: true,
+    });
+    assert.equal(realty.weightedValue, 92000, '부동산 과다보유 법인의 가중치가 순손익 2 : 순자산 3이 아니다');
+
+    // 순손익이 작으면 하한이 평가액이 된다 — (10,000 × 3 + 100,000 × 2) ÷ 5 = 46,000 < 80,000
+    const low = calculateUnlistedStockValue({ netAsset: 100 * 억, weightedIncome: 1 * 억, totalShares: 100000 });
+    assert.equal(low.valuePerShare, 80000, '가중평균이 하한보다 작은데 하한이 적용되지 않았다');
+  });
+
+audit('A-13', '1주당 순손익액의 가중평균이 0원 이하이면 0원으로 본다',
+  '상증법 시행령 제56조 제1항 — 1주당 최근 3년간의 순손익액의 가중평균액은 (직전 × 3 + 전전 × 2 + 전전전 × 1) ÷ 6 으로 하되, '
+  + '그 가액이 0원 이하인 경우에는 0원으로 한다 (조사일 2026-09-18)', () => {
+    // (-6억 × 3 + 0 × 2 + 3억 × 1) ÷ 6 = (-18억 + 3억) ÷ 6 = -2.5억
+    const weighted = calculateWeightedNetIncome([-6 * 억, 0, 3 * 억]);
+    assert.equal(weighted, -2.5 * 억, '가중평균이 3 : 2 : 1 ÷ 6으로 계산되지 않았다');
+
+    const r = calculateUnlistedStockValue({ netAsset: 20 * 억, weightedIncome: weighted, totalShares: 10000 });
+    assert.equal(r.incomePerShare, 0, '가중평균이 음수인데 1주당 순손익가치가 0원으로 처리되지 않았다');
+    // 0원으로 본 뒤 — 순자산가치 200,000원 · 가중평균 (0 × 3 + 200,000 × 2) ÷ 5 = 80,000원 · 하한 160,000원
+    assert.equal(r.valuePerShare, 160000);
+
+    // 결손 폭이 커져도 순손익가치가 음수로 내려가 순자산가치를 깎지는 않는다
+    const deeper = calculateUnlistedStockValue({ netAsset: 20 * 억, weightedIncome: -50 * 억, totalShares: 10000 });
+    assert.equal(deeper.valuePerShare, 160000, '결손이 깊어지자 평가액이 하한 아래로 내려갔다');
+  });
+
+audit('A-14', '최대주주 할증률이 20%이고, 할증 대상이 아닌 주식에는 가산하지 않는다',
+  '상증법 제63조 제3항 — 최대주주등의 주식등에 대해서는 평가액에 100분의 20을 가산한다. 다만 중소기업과 '
+  + '중견기업(직전 3개 사업연도 평균 매출액 5,000억원 미만)이 발행한 주식등, 평가기준일이 속하는 사업연도 전 3년 이내의 '
+  + '사업연도부터 계속하여 결손금이 있는 법인의 주식등은 제외한다. 제3항을 삭제하려던 2024년 정부안은 2024.12.10. '
+  + '국회 본회의에서 부결됐고, 2026년 세제개편안(\'26.8.3.)에도 폐지는 없다 (조사일 2026-09-18)', () => {
+    const base = { netAsset: 100 * 억, weightedIncome: 10 * 억, totalShares: 100000 };
+    const premium = calculateUnlistedStockValue(Object.assign({}, base, { hasMaxShareholderPremium: true }));
+    assert.equal(premium.premiumRate, 1.2, '할증률이 법정 100분의 20이 아니다');
+    assert.equal(premium.pricePerShare, Math.round(premium.valuePerShare * 1.2));
+
+    const excluded = calculateUnlistedStockValue(Object.assign({}, base, { hasMaxShareholderPremium: false }));
+    assert.equal(excluded.premiumRate, 1, '할증 제외 대상인데 20%가 가산됐다');
+    assert.equal(excluded.pricePerShare, excluded.valuePerShare);
+
+    // 제외 대상(중소기업)이 상담 대상의 대부분이므로 지정하지 않았을 때 가산하지 않는 것이 기본값이다.
+    // 기본값이 할증을 붙이면 제외 대상 법인의 주식이 20% 과대평가된다.
+    assert.equal(calculateUnlistedStockValue(base).premiumRate, 1,
+      '할증 여부를 지정하지 않았는데 20%가 가산됐다 — 제외 대상 법인이 과대평가된다');
   });
 
 // ══════════════════════════ B. 법정 규칙 준수 ══════════════════════════

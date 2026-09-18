@@ -46,8 +46,8 @@ node .claude/skills/tax-review/scripts/tax.js fp 37.4979 127.0276
 
 - **§1 제1~8조** — 계산과 화면의 분리(법정 수치는 `calc.js` 에만), 브라우저 없는 검증,
   기대값은 법령에서 전개, 저장·전송 금지, 단순성
-- **§3 화면 불변조건 8가지** — 헤더 높이, 입력 중 재렌더 금지, 결과 진입 게이트 등
-- **§9 실제로 틀렸던 것 7가지** — 같은 함정을 다시 밟지 않기 위한 목록
+- **§3 화면 불변조건 9가지** — 헤더 높이, 입력 중 재렌더 금지, 결과 진입 게이트, 부호 허용 칸 등
+- **§9 실제로 틀렸던 것 9가지** — 같은 함정을 다시 밟지 않기 위한 목록
 - **§10 완료 조건**
 
 ## 고친 뒤 검증
@@ -56,10 +56,10 @@ node .claude/skills/tax-review/scripts/tax.js fp 37.4979 127.0276
 
 | 명령 | 통과 기준 |
 |---|---|
-| `node calc.test.js` | PASS 131 / FAIL 0 |
+| `node calc.test.js` | PASS 134 / FAIL 0 |
 | `node succession-industry.test.js` | PASS 7 / FAIL 0 |
 | `node fp.test.js` | 253개 단언 통과 |
-| `node audit.test.js` | 통과 41건 / 범위 제외 1건 / 결함 0건 |
+| `node audit.test.js` | 통과 44건 / 범위 제외 1건 / 결함 0건 |
 | `node oracle/calc.test.js` | 26건 PASS |
 | `node oracle/fixture-check.js` | 43 passed, 0 failed |
 | `node oracle/crosscheck-run.js` | 400 cases, 2,400 values, 0 mismatched |
@@ -71,7 +71,7 @@ node .claude/skills/tax-review/scripts/tax.js fp 37.4979 127.0276
 node .claude/skills/tax-review/scripts/tax.js selftest
 ```
 
-74건 전부 §8 자기검증 벡터와 일치해야 한다. 실행기는 `calc.js` 를 직접 `require` 하므로,
+84건 전부 §8 자기검증 벡터와 일치해야 한다. 실행기는 `calc.js` 를 직접 `require` 하므로,
 계산 결과가 바뀌면 여기서 먼저 드러난다.
 
 ## 자주 틀리는 것
@@ -85,6 +85,13 @@ node .claude/skills/tax-review/scripts/tax.js selftest
 - **`Number.isFinite` 로 결과를 검증하면 안 된다.** NaN 만 본다.
 - **`exemptRatio` 는 이름과 달리 「과세되는 안분비율」이다** (비과세가 아니면 1).
 - **`fpExpiryStatus` 는 `Date` 가 아니라 `'YYYY-MM-DD'` 문자열을 받는다.** Date 를 넘기면 조용히 NaN 이 된다.
+- **비상장주식 최대주주 할증(20%)은 기본이 미적용이다.** 상증법 제63조 제3항이 중소기업·중견기업
+  (직전 3개 사업연도 평균 매출액 5,000억원 미만)·3년 계속 결손법인을 제외하므로 상담 대상 대부분이
+  할증 대상이 아니다. 켜려면 `--premium`(CLI) 또는 심화 모드의 「20% 할증」을 명시한다.
+  조문 자체는 살아 있다 — 2024년 정부안의 삭제는 2024.12.10. 국회 본회의에서 부결됐다.
+- **결손 연도의 순손익액은 음수로 넣는다.** 0으로 넣으면 순손익가치 하락이 사라져 평가액이 높아진다.
+  1주당 가중평균이 0원 이하이면 순손익가치를 0원으로 보고(상증령 제56조 제1항), 그때는 순자산가치
+  80% 하한이 평가액을 정한다.
 - **임원퇴직금의 한도와 지급액은 다르다.** 지급액은 근속연수 전체에 정관상 배수를 곱한 값이고,
   한도는 소득세법 제22조 제3항의 세 구간(2011년 이전 / 2012~2019 / 2020 이후)을 각각 다른 배수로
   계산한 합이다. 둘이 같아 보이면 구간 배분이 빠진 것이다. 전개는 `scripts/tax.js` 의 V9 단언 옆에 있다.
