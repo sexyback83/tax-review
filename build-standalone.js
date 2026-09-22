@@ -18,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 
 const SRC = path.join(__dirname, 'company_tax', 'tax-review');
-const OUT = path.join(__dirname, 'AI세무사_단일파일.html');
+const OUT = path.join(__dirname, 'AI세무검토_단일파일.html');
 
 const read = (f) => fs.readFileSync(path.join(SRC, f), 'utf8');
 const dataUri = (f) =>

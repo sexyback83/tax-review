@@ -1,4 +1,4 @@
-# 「AI 세무사」 사용 설명 영상 — 설계
+# 「AI 세무검토」 사용 설명 영상 — 설계
 
 | | |
 |---|---|
@@ -36,7 +36,7 @@ FC가 처음 이 도구를 열었을 때 무엇을 어떤 순서로 하면 되�
 ```
 walkthrough.html
   stage      1920×1080 고정 무대. 화면이 좁으면 transform: scale 로 줄여 보여준다
-  iframe     실제 AI 세무사 (조작 대상)
+  iframe     실제 AI 세무검토 (조작 대상)
   overlay    번호 배지 · 장 제목 · 하이라이트 링 · 딤 · 자막
   BEATS[]    대본 배열 (아래 §4)
   player     시각 t 를 받아 그 시점의 화면을 그린다
@@ -78,7 +78,7 @@ const BEATS = [{
 │                                                               │
 │         ┌──────────── 1000 × 900 ────────────┐                │
 │         │                                     │               │
-│         │        실제 AI 세무사 (iframe)       │               │
+│         │        실제 AI 세무검토 (iframe)       │               │
 │         │                                     │               │
 │         └─────────────────────────────────────┘               │
 │                                                               │
@@ -100,12 +100,12 @@ const BEATS = [{
 ```
 ai project/
   walkthrough.html                  ← 소스. 여기서 편집한다
-  AI세무사_단일파일.html              ← build-standalone.js 의 산출물
+  AI세무검토_단일파일.html              ← build-standalone.js 의 산출물
   build-video.js                    ← 스테이징 구성 + 프레임 촬영 + 인코딩
-  AI세무사_사용설명.mp4               ← 최종 산출물
+  AI세무검토_사용설명.mp4               ← 최종 산출물
 
 스크래치/stage/                      ← build-video.js 가 만든다
-  index.html        = AI세무사_단일파일.html 사본 (도구)
+  index.html        = AI세무검토_단일파일.html 사본 (도구)
   walkthrough.html  = walkthrough.html 사본 (연출)
 ```
 
