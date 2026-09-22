@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 「AI 세무사」 스킬의 계산 실행기 — company_tax/tax-review/ 의 검증된 계산 모듈을 CLI 로 부른다.
+ * 「AI 세무검토」 스킬의 계산 실행기 — company_tax/tax-review/ 의 검증된 계산 모듈을 CLI 로 부른다.
  *
  * 세율·공제 상수를 이 파일에 두지 않는다. 법정 수치는 calc.js 에만 있다 (프로젝트 원칙 제1조).
  * 여기 있는 것은 인자 파싱과 출력 서식뿐이다. 의존성이 없고 네트워크를 쓰지 않는다 (제4조).
@@ -558,7 +558,7 @@ function fpExpiryLine() {
 
 // ══════════════════════════ 자기검증 ══════════════════════════
 
-// 기대값의 출처는 AI세무사_에이전트_재생성_프롬프트.md §8 자기검증 벡터다.
+// 기대값의 출처는 AI세무검토_에이전트_재생성_프롬프트.md §8 자기검증 벡터다.
 // 구현을 실행해 얻지 않는다 (프로젝트 원칙 제3조).
 // 만원 단위로 대조한다 — 화면의 formatWon 이 만원까지 반올림해 보이므로 §8 과 같은 눈금이다.
 function selftest() {
@@ -760,7 +760,7 @@ function selftest() {
     console.log('\n계산 모듈이 §8 자기검증 벡터와 어긋납니다. calc.js 변경 내역을 확인하세요.');
     process.exit(1);
   }
-  console.log('AI세무사_에이전트_재생성_프롬프트.md §8 의 벡터와 전부 일치합니다.');
+  console.log('AI세무검토_에이전트_재생성_프롬프트.md §8 의 벡터와 전부 일치합니다.');
 }
 
 // ══════════════════════════ 진입점 ══════════════════════════
@@ -771,7 +771,7 @@ function help(which) {
     COMMANDS[which].flags.forEach((line) => console.log('  ' + line));
     return;
   }
-  console.log('AI 세무사 계산 실행기 — 금액 플래그의 단위는 만원입니다 (20억 -> 200000).\n');
+  console.log('AI 세무검토 계산 실행기 — 금액 플래그의 단위는 만원입니다 (20억 -> 200000).\n');
   console.log('  node tax.js <세목> [플래그...]');
   console.log('  node tax.js help <세목>      세목별 플래그');
   console.log('  node tax.js selftest         §8 자기검증 벡터 대조\n');

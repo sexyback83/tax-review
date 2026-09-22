@@ -1,4 +1,4 @@
-# 「AI 세무사」 사용 설명 영상 구현 계획
+# 「AI 세무검토」 사용 설명 영상 구현 계획
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -31,7 +31,7 @@
 | `walkthrough.test.js` (신규) | 대본 자료구조와 시간 계산 테스트. 의존성 없음 |
 | `walkthrough.html` (신규) | 무대·오버레이·player. `walkthrough-beats.js` 를 클래식 스크립트로 싣는다 |
 | `build-video.js` (신규) | 스테이징 구성 → 셀렉터 무결성 검사 → 프레임 촬영 → ffmpeg 인코딩 |
-| `AI세무사_사용설명.mp4` (산출물) | 최종 영상 |
+| `AI세무검토_사용설명.mp4` (산출물) | 최종 영상 |
 
 `walkthrough-beats.js` 를 별도 파일로 두는 이유는 이 저장소의 기존 방식과 같다 — `calc.js` 처럼 브라우저에서는 클래식 스크립트로 보이고 node 에서는 `require` 로 테스트할 수 있게 한다.
 
@@ -136,7 +136,7 @@ Expected: FAIL — `Cannot find module './walkthrough-beats.js'`
 `ai project/walkthrough-beats.js`:
 
 ```js
-// 「AI 세무사」 사용 설명 영상의 대본.
+// 「AI 세무검토」 사용 설명 영상의 대본.
 //
 // act 는 함수가 아니라 이름(문자열)이다. 대본을 순수 데이터로 두어야 node 에서 검사할 수 있고,
 // 실제 조작은 walkthrough.html 의 ACTIONS 표가 이름으로 찾아 실행한다.
@@ -303,7 +303,7 @@ git update-ref refs/heads/main "$C" && git push origin main
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI 세무사 사용 설명</title>
+<title>AI 세무검토 사용 설명</title>
 <style>
   :root {
     --stage-bg: #141311;
@@ -380,7 +380,7 @@ git update-ref refs/heads/main "$C" && git push origin main
 <body>
 
 <div class="stage" id="stage">
-  <div class="app-frame"><iframe id="app" title="AI 세무사"></iframe></div>
+  <div class="app-frame"><iframe id="app" title="AI 세무검토"></iframe></div>
   <div class="dim" id="dimT"></div><div class="dim" id="dimB"></div>
   <div class="dim" id="dimL"></div><div class="dim" id="dimR"></div>
   <div class="ring" id="ring"></div>
@@ -412,12 +412,12 @@ Run: 스테이징 폴더를 만들고 브라우저로 연다.
 ```bash
 cd "C:/Users/brugl/OneDrive/바탕 화면/ai project"
 mkdir -p ../test/_stage
-cp AI세무사_단일파일.html ../test/_stage/index.html
+cp AI세무검토_단일파일.html ../test/_stage/index.html
 cp walkthrough.html walkthrough-beats.js ../test/_stage/
 ```
 
 `preview_start` 로 `file:///C:/Users/brugl/OneDrive/바탕 화면/test/_stage/walkthrough.html` 을 연다.
-Expected: 근검정 배경 위에 1000×900 흰 카드가 있고 그 안에 AI 세무사 시작 화면이 보인다. 자막·배지는 아직 비어 있다.
+Expected: 근검정 배경 위에 1000×900 흰 카드가 있고 그 안에 AI 세무검토 시작 화면이 보인다. 자막·배지는 아직 비어 있다.
 
 - [ ] **Step 3: 커밋**
 
@@ -674,13 +674,13 @@ const puppeteer = require('puppeteer');
 const ROOT = __dirname;
 const STAGE = path.join(os.tmpdir(), 'aitax-video-stage');
 const FRAMES = path.join(os.tmpdir(), 'aitax-video-frames');
-const OUT = path.join(ROOT, 'AI세무사_사용설명.mp4');
+const OUT = path.join(ROOT, 'AI세무검토_사용설명.mp4');
 const FPS = 12;
 
 function buildStage() {
   fs.rmSync(STAGE, { recursive: true, force: true });
   fs.mkdirSync(STAGE, { recursive: true });
-  fs.copyFileSync(path.join(ROOT, 'AI세무사_단일파일.html'), path.join(STAGE, 'index.html'));
+  fs.copyFileSync(path.join(ROOT, 'AI세무검토_단일파일.html'), path.join(STAGE, 'index.html'));
   for (const f of ['walkthrough.html', 'walkthrough-beats.js']) {
     fs.copyFileSync(path.join(ROOT, f), path.join(STAGE, f));
   }
@@ -783,7 +783,7 @@ git update-ref refs/heads/main "$C" && git push origin main
 
 **Interfaces:**
 - Consumes: Task 3 의 `openStage(browser)`, `player.seek(t)`, `FPS`, `STAGE`, `FRAMES`, `OUT`
-- Produces: `AI세무사_사용설명.mp4` — 1920×1080, 12fps, H.264
+- Produces: `AI세무검토_사용설명.mp4` — 1920×1080, 12fps, H.264
 
 - [ ] **Step 1: 촬영과 인코딩을 쓴다**
 
@@ -852,7 +852,7 @@ Expected: 120장이 찍히고 MP4 가 나온다. 프레임당 1초를 넘으면 
 - [ ] **Step 3: 전체를 촬영해 인코딩한다**
 
 Run: `cd "C:/Users/brugl/OneDrive/바탕 화면/ai project" && node build-video.js`
-Expected: `완성: ...AI세무사_사용설명.mp4 (NN.NMB)`
+Expected: `완성: ...AI세무검토_사용설명.mp4 (NN.NMB)`
 
 - [ ] **Step 4: 결과물을 검증한다**
 
@@ -861,13 +861,13 @@ cd "C:/Users/brugl/OneDrive/바탕 화면/ai project"
 node -e "
 const {execFileSync}=require('child_process');
 const p=require('ffmpeg-static').replace('ffmpeg','ffprobe');
-console.log(execFileSync(p,['-v','error','-show_entries','stream=width,height,nb_frames,duration','-of','default=noprint_wrappers=1','AI세무사_사용설명.mp4']).toString());
+console.log(execFileSync(p,['-v','error','-show_entries','stream=width,height,nb_frames,duration','-of','default=noprint_wrappers=1','AI세무검토_사용설명.mp4']).toString());
 "
 ```
 
 Expected: `width=1920` · `height=1080` · `duration` 이 `totalDuration()` 과 ±1초 안. 어긋나면 `FPS` 와 프레임 수를 다시 맞춘다.
 
-`ffmpeg-static` 에 ffprobe 가 없으면 대신 ffmpeg 으로 확인한다: `ffmpeg -i AI세무사_사용설명.mp4` 의 stderr 에 해상도와 길이가 찍힌다.
+`ffmpeg-static` 에 ffprobe 가 없으면 대신 ffmpeg 으로 확인한다: `ffmpeg -i AI세무검토_사용설명.mp4` 의 stderr 에 해상도와 길이가 찍힌다.
 
 - [ ] **Step 5: 눈으로 확인한다**
 
@@ -915,7 +915,7 @@ cd "C:/Users/brugl/OneDrive/바탕 화면/test"
 AP="C:/Users/brugl/OneDrive/바탕 화면/ai project"
 export GIT_INDEX_FILE=/tmp/wtidx5 && rm -f "$GIT_INDEX_FILE"
 git read-tree gh-pages
-B=$(git hash-object -w "$AP/AI세무사_단일파일.html"); git update-index --add --cacheinfo 100644,"$B",index.html
+B=$(git hash-object -w "$AP/AI세무검토_단일파일.html"); git update-index --add --cacheinfo 100644,"$B",index.html
 for f in walkthrough.html walkthrough-beats.js; do
   B=$(git hash-object -w "$AP/$f"); git update-index --add --cacheinfo 100644,"$B","$f"
 done
@@ -1004,7 +1004,7 @@ git update-ref refs/heads/main "$C" && git push origin main
 
 1. `node walkthrough.test.js` 가 통과하고 총 길이가 170~200초 안에 있다
 2. `node build-video.js --check` 가 모든 focus 셀렉터를 찾는다
-3. `AI세무사_사용설명.mp4` 가 1920×1080 이고 길이가 대본과 ±1초 안이다
+3. `AI세무검토_사용설명.mp4` 가 1920×1080 이고 길이가 대본과 ±1초 안이다
 4. `https://sexyback83.github.io/tax-review/walkthrough.html` 이 콘솔 오류 없이 재생된다
 5. 도구의 기존 검증 7종과 스킬 selftest 가 종전 수치 그대로다
 6. 저장소에 `node_modules/` 와 `*.mp4` 가 들어가지 않았다
