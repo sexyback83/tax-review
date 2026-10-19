@@ -7,12 +7,16 @@
 //
 // 근거: 상속세 및 증여세법 제18조의2, 같은 법 시행령 제15조 (제1항 [별표] · 제3항 요건)
 //
-// ⚠ 업종표의 기준 시점 — SUCCESSION_INDUSTRY_CODES(727개 세세분류)는 **2026 세제개편안(개정 후)**
-// 기준이다. 개편안은 업종 기준을 한국표준산업분류 대·중분류(대통령령 별표)에서 세세분류(법률 별표)로
-// 바꾸고 총 1,205개 중 727개를 대상으로 하며, 2027.7.1. 이후 상속개시분부터 적용된다
-// (company_tax/docs/2026-tax-reform-summary.md §3.2). 현행(대·중분류) 기준 표는 이 파일에 없으므로,
-// 이 표에 없는 코드가 현행 기준으로도 비해당이라는 뜻은 아니다 — 병원·창고업처럼 개편안에서
-// 새로 제외되는 업종은 현행 기준으로 해당할 수 있다.
+// ⚠ 업종표는 기준 시점별로 두 벌이다.
+//   · SUCCESSION_INDUSTRY_CODES — **2026 세제개편안(개정 후)** 세세분류 727개. 개편안은 업종 기준을
+//     대통령령 별표에서 세세분류(법률 별표)로 바꾸고 총 1,205개 중 727개를 대상으로 하며,
+//     2027.7.1. 이후 상속개시분부터 적용된다 (company_tax/docs/2026-tax-reform-summary.md §3.2).
+//   · SUCCESSION_INDUSTRY_CODES_CURRENT — **현행** 시행령 [별표](개정 2023. 2. 28.). 중·소·세분류를 섞어
+//     열거하고, 표준산업분류로 가릴 수 없는 「개별법률의 규정에 따른 업종」은 SUCCESSION_CURRENT_LAW_INDUSTRIES
+//     로 따로 둔다.
+// 두 표는 서로의 상위집합이 아니다 — 소매업(47)은 현행 전체인데 개정 후엔 일부만 남고, 자동차 수리업·
+// 선박관리업 등 22개 업종은 개정 후 표에만 있다(현행에선 개별법률로만 인정). 그래서 한 표의 「없음」을
+// 다른 기준의 「비해당」으로 읽으면 안 되고, 화면은 두 기준을 구분해 보여준다.
 //
 // 국세청 고시 개정 시 이 파일만 고치면 된다 — 표 자체를 손보는 작업이 calc.js의 세액 계산
 // 로직을 건드리지 않도록 파일을 나눠 두었다.
@@ -47,17 +51,17 @@ const FOOD_SERVICE_NOTE = '음식을 직접 제조하거나 조리하지 않는 
 
 // [대분류 문자, 업종코드(한국표준산업분류), 업종명, 비고(조건·제외사유)]
 const SUCCESSION_INDUSTRY_CODES = [
-  ['A', '1123', '종자 및 묘목 생산업',
+  ['A', '01123', '종자 및 묘목 생산업',
     '가업용 자산 중 토지·건물의 가액이 가업용 자산가액의 100분의 50 미만인 경우만 해당 (상증령 제15조)'],
 
-  ['B', '5100', '석탄 광업'],
-  ['B', '6100', '철 광업'],
-  ['B', '6200', '비철금속 광업'],
-  ['B', '7110', '석회석 및 점토 광업'],
-  ['B', '7121', '건설용 석재 채굴 및 쇄석 생산업'],
-  ['B', '7210', '화학용 및 비료원료용 광물 광업'],
-  ['B', '7290', '그 외 기타 비금속광물 광업'],
-  ['B', '8000', '광업 지원 서비스업'],
+  ['B', '05100', '석탄 광업'],
+  ['B', '06100', '철 광업'],
+  ['B', '06200', '비철금속 광업'],
+  ['B', '07110', '석회석 및 점토 광업'],
+  ['B', '07121', '건설용 석재 채굴 및 쇄석 생산업'],
+  ['B', '07210', '화학용 및 비료원료용 광물 광업'],
+  ['B', '07290', '그 외 기타 비금속광물 광업'],
+  ['B', '08000', '광업 지원 서비스업'],
 
   ['C', '10111', '육류 도축업(가금류 제외)'],
   ['C', '10112', '가금류 도축업'],
@@ -797,18 +801,121 @@ const SUCCESSION_INDUSTRY_CODES = [
 const SUCCESSION_BASIS_CURRENT = 'current';
 const SUCCESSION_BASIS_REFORM = 'reform';
 
-// 현행 업종표 — 상증법 시행령 제15조 [별표]「가업상속공제를 적용받는 중소·중견기업의 해당 업종」.
-// ⚠ 아직 비어 있다. 현행 별표 원문이 저장소에 없고 법령 사이트도 이 환경에서 열리지 않아, 기억이나
-// 검색 요약으로 채우면 FC가 틀린 판정을 받을 수 있기 때문이다. 비어 있는 동안 현행 기준 판정은
-// 「판정 불가」로 나오고 개정 후 기준 판정만 유효하다. 별표 원문을 받으면 아래 형식으로 채운다.
+// 현행 업종표 — 상증법 시행령 제15조 [별표]「가업상속공제를 적용받는 중소·중견기업의 해당 업종」
+// (제15조제1항 및 제2항 관련) 중 「1. 한국표준산업분류에 따른 업종」.
+// 출처: 국세청 「중소·중견기업 경영자를 위한 가업승계 지원제도 안내」 26~27쪽에 수록된 시행령 [별표]
+//       <개정 2023. 2. 28.> 원문을 그대로 옮겼다. 이후 개정이 있었는지는 확인하지 않았다 — 개정 시 이 표만 고친다.
 //
-//   [대분류 문자, 업종코드, 업종명, 비고(조건·제외사유, 없으면 생략)]
+//   [대분류 문자, 업종코드, 업종명, 비고(조건·제외사유, 없으면 생략), 구분(생략 = 포함 · 'exclude' = 제외)]
 //
-// 개정 후 표(세세분류 5자리)와 달리 현행 별표는 중분류(2자리) 단위로 열거하는 행이 많으므로
-// 코드는 2~5자리 접두로 쓴다. 입력 코드가 그 접두로 시작하면 해당한다(가장 긴 접두 우선).
-// 같은 중분류 안에서 일부만 빠지는 업종(예: 음식점업 중 커피전문점)은 제외 목록을 따로 두지 않고
-// 포함되는 세부 코드만 행으로 적는다. 대분류 문자는 SUCCESSION_INDUSTRY_CATEGORIES 에 있어야 한다.
-const SUCCESSION_INDUSTRY_CODES_CURRENT = [];
+// 개정 후 표(세세분류 5자리)와 달리 현행 별표는 중분류(2자리)·소분류(3자리)·세분류(4자리)·세세분류(5자리)를
+// 섞어 열거한다. 코드는 그 접두로 쓰고, 입력 코드가 접두로 시작하면 해당한다. 여러 행이 겹치면 **가장 긴
+// 접두 행이 이긴다** — 그래서 「영상·오디오 기록물제작 및 배급업(59) 중 비디오물 감상실 운영업(59142)은
+// 제외」 같은 단서를 포함 행(59)과 제외 행(59142, 'exclude')으로 적는다.
+// 제외 행과 비고가 있는 행은 화면에서 각각 「비해당(제외 업종)」과 「조건부 해당」으로 나온다.
+// 별표에 열거되지 않은 업종(예: 숙박업 55, 창고업 52, 주점업 562)은 이 표에 행이 없어 비해당이다.
+// 다만 「2. 개별법률의 규정에 따른 업종」(SUCCESSION_CURRENT_LAW_INDUSTRIES)은 표준산업분류 코드로
+// 가릴 수 없으므로 이 표에 넣지 않고 따로 안내한다.
+
+// 2자리 중분류 코드를 from~to 까지 한 행씩 펼친다 — 예: ('C', 10, 33, '제조업 전체') → 10, 11, …, 33
+function industryRange(category, from, to, name, note) {
+  const rows = [];
+  for (let n = from; n <= to; n += 1) {
+    const code = (n < 10 ? '0' : '') + n;
+    rows.push(note ? [category, code, name, note] : [category, code, name]);
+  }
+  return rows;
+}
+
+const SUCCESSION_INDUSTRY_CODES_CURRENT = [
+  // 가. 농업, 임업 및 어업 (01 ~ 03)
+  ['A', '01123', '종자 및 묘목 생산업',
+    '작물재배업(011) 중 종자 및 묘목생산업을 영위하는 기업으로서 가업용 자산 중 토지·건물의 가액이 가업용 자산가액의 100분의 50 미만인 경우만 해당 (상증령 제15조제7항)'],
+  // 나. 광업 (05 ~ 08)
+  ...industryRange('B', 5, 8, '광업 전체'),
+  // 다. 제조업 (10 ~ 33)
+  ...industryRange('C', 10, 33, '제조업 전체'),
+  // 라. 하수 및 폐기물 처리, 원료 재생, 환경정화 및 복원업 (37 ~ 39)
+  ...industryRange('E', 37, 39, '하수·폐기물 처리(재활용을 포함한다), 원료 재생, 환경정화 및 복원업 전체'),
+  // 마. 건설업 (41 ~ 42)
+  ...industryRange('F', 41, 42, '건설업 전체'),
+  // 바. 도매 및 소매업 (45 ~ 47)
+  ...industryRange('G', 45, 47, '도매 및 소매업 전체'),
+  // 사. 운수업 (49 ~ 52) — 여객운송업만. 창고업 등 52 는 열거되지 않았다.
+  ['H', '49', '여객운송업 — 육상운송 및 파이프라인 운송업', '여객을 운송하는 경우만 해당'],
+  ['H', '50', '여객운송업 — 수상 운송업', '여객을 운송하는 경우만 해당'],
+  ['H', '51', '여객운송업 — 항공 운송업', '여객을 운송하는 경우만 해당'],
+  // 아. 숙박 및 음식점업 (55 ~ 56) — 음식점 및 주점업(56) 중 음식점업(561)만
+  ['I', '561', '음식점업 (음식점 및 주점업 중)'],
+  // 자. 정보통신업 (58 ~ 63)
+  ['J', '58', '출판업'],
+  ['J', '59', '영상·오디오 기록물제작 및 배급업'],
+  ['J', '59142', '비디오물 감상실 운영업', '별표에서 제외하는 업종입니다', 'exclude'],
+  ['J', '60', '방송업'],
+  ['J', '612', '전기통신업 (우편 및 통신업 중)'],
+  ['J', '62', '컴퓨터 프로그래밍, 시스템 통합 및 관리업'],
+  ['J', '63', '정보서비스업'],
+  // 차. 전문, 과학 및 기술서비스업 (70 ~ 73)
+  ['M', '70', '연구개발업'],
+  ['M', '713', '광고업 (전문서비스업 중)'],
+  ['M', '714', '시장조사 및 여론조사업 (전문서비스업 중)'],
+  ['M', '729', '기타 과학기술 서비스업 (건축기술, 엔지니어링 및 기타 과학기술 서비스업 중)'],
+  ['M', '732', '전문디자인업 (기타 전문, 과학 및 기술 서비스업 중)'],
+  // 카. 사업시설관리 및 사업지원 서비스업 (74 ~ 75)
+  ['N', '7421', '건물 및 산업설비 청소업 (사업시설 관리 및 조경 서비스업 중)'],
+  ['N', '7422', '소독, 구충 및 방제 서비스업 (사업시설 관리 및 조경 서비스업 중)'],
+  ['N', '751', '고용알선 및 인력 공급업 (농업노동자 공급업을 포함한다)'],
+  ['N', '7531', '경비 및 경호 서비스업 (사업지원 서비스업 중)'],
+  ['N', '7532', '보안시스템 서비스업 (사업지원 서비스업 중)'],
+  ['N', '75991', '콜센터 및 텔레마케팅 서비스업 (사업지원 서비스업 중)'],
+  ['N', '75992', '전시, 컨벤션 및 행사 대행업 (사업지원 서비스업 중)'],
+  ['N', '75994', '포장 및 충전업 (사업지원 서비스업 중)'],
+  // 타. 임대업 : 부동산 제외 (76)
+  ['N', '764', '무형재산권 임대업', '「지식재산 기본법」 제3조제1호에 따른 지식재산을 임대하는 경우로 한정'],
+  // 파. 교육서비스업 (85)
+  ['P', '8511', '유아 교육기관 (교육 서비스업 중)'],
+  ['P', '8564', '사회교육시설 (교육 서비스업 중)'],
+  ['P', '8565', '직원훈련기관 (교육 서비스업 중)'],
+  ['P', '85669', '기타 기술 및 직업훈련학원 (교육 서비스업 중)'],
+  // 하. 사회복지 서비스업 (87)
+  ['Q', '87', '사회복지서비스업 전체'],
+  // 거. 예술, 스포츠 및 여가관련 서비스업 (90 ~ 91)
+  ['R', '901', '창작 및 예술관련 서비스업 (창작, 예술 및 여가관련 서비스업 중)'],
+  ['R', '902', '도서관, 사적지 및 유사 여가관련 서비스업 (창작, 예술 및 여가관련 서비스업 중)'],
+  ['R', '90212', '독서실 운영업', '별표에서 제외하는 업종입니다', 'exclude'],
+  // 너. 협회 및 단체, 수리 및 기타 개인 서비스업 (94 ~ 96)
+  ['S', '96993', '개인 간병인 및 유사 서비스업 (기타 개인 서비스업 중)'],
+];
+
+// 「2. 개별법률의 규정에 따른 업종」 — 같은 별표의 두 번째 표. 표준산업분류 코드로는 가릴 수 없고
+// 해당 법률에 따른 사업인지로 정해지므로, 업종코드 판정과 별개로 화면에서 따로 안내한다.
+const SUCCESSION_CURRENT_LAW_INDUSTRIES = [
+  ['가', '「조세특례제한법」 제7조제1항제1호커목에 따른 직업기술 분야 학원'],
+  ['나', '「조세특례제한법 시행령」 제5조제9항에 따른 엔지니어링사업'],
+  ['다', '「조세특례제한법 시행령」 제5조제7항에 따른 물류산업'],
+  ['라', '「조세특례제한법 시행령」 제6조제1항에 따른 수탁생산업'],
+  ['마', '「조세특례제한법 시행령」 제54조제1항에 따른 자동차정비공장을 운영하는 사업'],
+  ['바', '「해운법」에 따른 선박관리업'],
+  ['사', '「의료법」에 따른 의료기관을 운영하는 사업'],
+  ['아', '「관광진흥법」에 따른 관광사업(카지노업, 관광유흥음식점업 및 외국인전용 유흥음식점업은 제외한다)'],
+  ['자', '「노인복지법」에 따른 노인복지시설을 운영하는 사업'],
+  ['차', '법률 제15881호 노인장기요양보험법 부칙 제4조에 따라 재가장기요양기관을 운영하는 사업'],
+  ['카', '「전시산업발전법」에 따른 전시산업'],
+  ['타', '「에너지이용 합리화법」 제25조에 따른 에너지절약전문기업이 하는 사업'],
+  ['파', '「국민 평생 직업능력 개발법」에 따른 직업능력개발훈련시설을 운영하는 사업'],
+  ['하', '「도시가스사업법」 제2조제4호에 따른 일반도시가스사업'],
+  ['거', '「연구산업진흥법」 제2조제1호나목의 산업'],
+  ['너', '「민간임대주택에 관한 특별법」에 따른 주택임대관리업'],
+  ['더', '「신에너지 및 재생에너지 개발·이용·보급 촉진법」에 따른 신·재생에너지 발전사업'],
+];
+
+// 현행 기준 판정에 함께 알려야 할 별표·요건의 단서. 업종코드만으로 결과가 바뀌지는 않지만 해석에 필요하다.
+const SUCCESSION_CURRENT_REMARKS = [
+  '국세청 안내 책자에 수록된 시행령 [별표] <개정 2023. 2. 28.> 기준입니다. 이후 개정 여부는 확인하세요.',
+  '별표에 열거된 업종을 「주된 사업」으로 영위해야 합니다(상증령 제15조제1항·제2항). 사업자등록증의 업종코드가 여러 개면 주업종 코드로 확인하세요.',
+  '제조업에는 제품을 직접 제조하지 않고 제조업체(국내 또는 개성공업지구 소재)에 의뢰해 제조하는 사업도, 직접 기획할 것·자기명의로 제조할 것·인수해 자기책임하에 직접 판매할 것을 모두 충족하면 포함됩니다.',
+  '표준산업분류 코드로 해당하지 않아도 아래 「개별법률의 규정에 따른 업종」(의료기관·관광사업·물류산업 등 17가지)에 해당하면 가업에 해당할 수 있습니다.',
+];
 
 // 사업자등록증에는 표준산업분류(4~5자리)가 아니라 국세청 업종코드(6자리)가 적히는 경우가
 // 많고, 그 코드는 대개 표준산업분류 코드를 앞자리로 그대로 포함한다. 숫자만 남긴 입력이
@@ -820,14 +927,18 @@ function normalizeIndustryCode(code) {
 function emptyIndustryResult(normalized, basis, unavailable) {
   return {
     normalized, basis, matched: false, approximate: false, unavailable: !!unavailable,
+    excluded: false, partial: false,
     category: '', categoryName: '', name: '', note: '',
   };
 }
 
 // inputCode 를 기준(basis)의 업종표와 대조한다. 기본은 개정 후 — 기존 호출은 결과가 바뀌지 않는다.
-//   개정 후  정확히 일치하는 행이 없으면 입력 코드를 앞자리로 가진 가장 긴 행을 참고 판정(approximate)한다.
-//   현행    중분류 등 짧은 접두 행이 범주 전체를 뜻하므로 가장 긴 접두 일치를 정식 판정으로 본다.
-//           다만 입력이 6자리 국세청 업종코드면 앞 5자리(표준산업분류)로 대조했다는 뜻에서 approximate.
+// 입력 코드로 시작하는 접두 행 중 **가장 긴 행**이 이긴다. 그 행이 제외 행('exclude')이면 비해당이다.
+//   approximate  개정 후: 입력과 정확히 일치하는 행이 없어 앞자리가 같은 행으로 참고 판정한 경우
+//                현행:    6자리 국세청 업종코드를 앞 5자리(표준산업분류)로 대조한 경우
+//   partial      행이 하나도 안 맞는데 입력이 5자리(표준산업분류 최대 자릿수)보다 짧고 그 앞자리를 가진 행이
+//                있는 경우 — 코드가 모자라 판정할 수 없다(비해당으로 오판하지 않는다).
+//   excluded     별표가 명시적으로 제외한 업종(예: 비디오물 감상실 운영업)
 // tables 는 시험용 주입 — { current: [...], reform: [...] }. 쓰지 않으면 이 파일의 표를 쓴다.
 function checkSuccessionIndustry(inputCode, basis, tables) {
   const useBasis = basis === SUCCESSION_BASIS_CURRENT ? SUCCESSION_BASIS_CURRENT : SUCCESSION_BASIS_REFORM;
@@ -839,36 +950,38 @@ function checkSuccessionIndustry(inputCode, basis, tables) {
   if (!normalized) return emptyIndustryResult('', useBasis, false);
   if (rows.length === 0) return emptyIndustryResult(normalized, useBasis, true);
 
-  let entry = rows.find((row) => row[1] === normalized);
-  let approximate = false;
+  const entry = rows
+    .filter((row) => normalized.indexOf(row[1]) === 0)
+    .sort((a, b) => b[1].length - a[1].length)[0];
   if (!entry) {
-    const prefixMatches = rows
-      .filter((row) => normalized.indexOf(row[1]) === 0)
-      .sort((a, b) => b[1].length - a[1].length);
-    if (prefixMatches.length > 0) {
-      entry = prefixMatches[0];
-      approximate = !isCurrent;
-    }
+    const result = emptyIndustryResult(normalized, useBasis, false);
+    result.partial = normalized.length < 5 && rows.some((row) => row[1].indexOf(normalized) === 0);
+    return result;
   }
-  if (!entry) return emptyIndustryResult(normalized, useBasis, false);
-  if (isCurrent) approximate = normalized.length > 5;
 
-  const [category, code, name, note] = entry;
-  return {
-    normalized, basis: useBasis, matched: true, approximate, unavailable: false,
-    matchedCode: code,
-    category, categoryName: SUCCESSION_INDUSTRY_CATEGORIES[category] || '',
-    name, note: note || '',
-  };
+  const [category, code, name, note, kind] = entry;
+  const result = emptyIndustryResult(normalized, useBasis, false);
+  result.approximate = isCurrent ? normalized.length > 5 : code !== normalized;
+  result.matchedCode = code;
+  result.category = category;
+  result.categoryName = SUCCESSION_INDUSTRY_CATEGORIES[category] || '';
+  result.name = name;
+  result.note = note || '';
+  if (kind === 'exclude') result.excluded = true;
+  else result.matched = true;
+  return result;
 }
 
 // 한 번의 입력으로 두 기준의 결과를 함께 낸다. 화면이 현행/개정 후를 나란히 보여준다.
-//   state  empty(미입력) · unavailable(현행 표 없음) · ok(해당) · cond(조건부 해당) · no(비해당)
+//   state  empty(미입력) · unavailable(표 없음) · partial(코드 부족) · excluded(별표 제외 업종)
+//          · ok(해당) · cond(조건부 해당) · no(비해당)
 //   change both(두 기준 모두 해당) · removed(현행 해당 → 개정 후 제외) · added(현행 비해당 → 개정 후 신규)
-//          neither(두 기준 모두 비해당) · unknown(현행 표가 없어 비교 불가) · empty(미입력)
+//          neither(두 기준 모두 비해당) · partial(코드가 짧아 비교 불가) · unknown(표가 없어 비교 불가) · empty(미입력)
 function industryState(r) {
   if (!r.normalized) return 'empty';
   if (r.unavailable) return 'unavailable';
+  if (r.partial) return 'partial';
+  if (r.excluded) return 'excluded';
   return r.matched ? (r.note ? 'cond' : 'ok') : 'no';
 }
 
@@ -877,6 +990,7 @@ function compareSuccessionIndustry(inputCode, tables) {
   const reform = checkSuccessionIndustry(inputCode, SUCCESSION_BASIS_REFORM, tables);
   let change = 'unknown';
   if (!current.normalized) change = 'empty';
+  else if (current.partial || reform.partial) change = 'partial';
   else if (!current.unavailable) {
     change = current.matched && reform.matched ? 'both'
       : current.matched ? 'removed'
@@ -925,6 +1039,8 @@ if (typeof module !== 'undefined' && module.exports) {
     SUCCESSION_INDUSTRY_CATEGORIES,
     SUCCESSION_INDUSTRY_CODES,
     SUCCESSION_INDUSTRY_CODES_CURRENT,
+    SUCCESSION_CURRENT_LAW_INDUSTRIES,
+    SUCCESSION_CURRENT_REMARKS,
     SUCCESSION_BASIS_CURRENT,
     SUCCESSION_BASIS_REFORM,
     SUCCESSION_DECEDENT_REQUIREMENTS,
