@@ -116,7 +116,7 @@ node .claude/skills/tax-review/scripts/tax.js selftest
 |---|---|
 | `index.html` | 화면 전부 (인라인 CSS·JS). 입력 수집·단위 환산·결과 표시만 한다 |
 | `calc.js` | 세액 계산 순수 함수와 법정 상수. 조문 주석이 붙어 있다 |
-| `succession-industry.js` | 가업상속공제 적용대상업종 727개 표·판정 함수·피상속인/상속인 요건. 세액을 계산하지 않아 `calc.js` 와 분리했다 |
+| `succession-industry.js` | 가업상속공제 적용대상업종 727개 표(**2026 개편안·개정 후 기준** — 현행 대·중분류 표는 없음)·판정 함수·피상속인/상속인 요건. 세액을 계산하지 않아 `calc.js` 와 분리했다 |
 | `fp.js` | FP센터 8곳·하버사인 거리·유효기간·지도 투영 |
 | `calc.test.js` | 회귀 — 구현이 설계대로인가 |
 | `succession-industry.test.js` | 업종표 구조(727개·중복 없음)·판정 로직 회귀 |

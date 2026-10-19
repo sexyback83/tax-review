@@ -2605,25 +2605,31 @@ function succReqListHtml(list, prefix) {
   }).join('');
 }
 
+// 이 판정은 2026 세제개편안의 세세분류 업종표(727개)로 한다. 개편안은 2027.7.1. 이후 상속개시분부터
+// 적용되고, 현행은 한국표준산업분류 대·중분류 기준(시행령 별표)이라 결과가 다를 수 있다.
+const SUCC_BASIS_NOTE = '※ 2027.7.1. 이후 상속개시분부터 적용되는 2026 세제개편안 기준이며, 현행 기준과 다를 수 있습니다.';
+
 function succResultHtml() {
   const code = state.vals.succCode || '';
   const r = checkSuccessionIndustry(code);
   if (!r.normalized) {
-    return '<div class="succ-result empty">업종코드를 입력하면 가업상속공제 적용대상 업종(727개)인지 바로 확인합니다.</div>';
+    return '<div class="succ-result empty">업종코드를 입력하면 개정 후 기준 적용대상 업종(727개)인지 바로 확인합니다. '
+      + SUCC_BASIS_NOTE + '</div>';
   }
   const approxNote = r.approximate
     ? ' 입력값과 정확히 일치하는 코드가 없어 앞자리가 일치하는 업종을 참고로 표시했습니다 — 사업자등록증의 정확한 업종코드로 다시 확인하세요.'
     : '';
   if (!r.matched) {
     return '<div class="succ-result no">입력하신 업종코드 「' + esc(code)
-      + '」는 가업상속공제 적용대상 업종 목록에 없습니다. 코드를 다시 확인하거나 세무 전문가에게 문의하세요.</div>';
+      + '」는 개정 후 기준(727개) 적용대상 업종 목록에 없습니다. 현행 기준으로는 해당할 수 있으니 '
+      + '코드를 다시 확인하거나 세무 전문가에게 문의하세요.</div>';
   }
   if (r.note) {
     return '<div class="succ-result cond">' + esc(r.categoryName + ' · ' + r.name)
-      + ' — 적용대상 업종이지만 조건이 있습니다: ' + esc(r.note) + esc(approxNote) + '</div>';
+      + ' — 개정 후 기준 적용대상 업종이지만 조건이 있습니다: ' + esc(r.note) + esc(approxNote) + '</div>';
   }
   return '<div class="succ-result ok">' + esc(r.categoryName + ' · ' + r.name)
-    + ' — 가업상속공제 적용대상 업종입니다.' + esc(approxNote) + '</div>';
+    + ' — 개정 후 기준 가업상속공제 적용대상 업종입니다.' + esc(approxNote) + '</div>';
 }
 
 function succSummaryHtml() {
@@ -2631,7 +2637,7 @@ function succSummaryHtml() {
   const indState = !r.normalized ? '미확인' : (r.matched ? (r.note ? '조건부 해당' : '해당') : '비해당');
   const decOk = succCheckedCount(SUCCESSION_DECEDENT_REQUIREMENTS, 'succ_dec_') === SUCCESSION_DECEDENT_REQUIREMENTS.length;
   const heirOk = succCheckedCount(SUCCESSION_HEIR_REQUIREMENTS, 'succ_heir_') === SUCCESSION_HEIR_REQUIREMENTS.length;
-  return '가업상속공제 사전요건 — 업종 ' + indState
+  return '가업상속공제 사전요건 — 업종(개정 후 기준) ' + indState
     + ' · 피상속인 요건 ' + (decOk ? '충족' : '미충족')
     + ' · 상속인 요건 ' + (heirOk ? '충족' : '미충족');
 }
