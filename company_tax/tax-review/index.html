@@ -188,6 +188,16 @@
   .succ-result.ok { background: #eaf6ec; border: 1px solid #bfe0c4; color: #1f7a3d; }
   .succ-result.cond { background: #fdf4e7; border: 1px solid #e8d5b0; color: #8a5a12; }
   .succ-result.no { background: #fdecec; border: 1px solid #eec3c3; color: #a3312b; }
+  .succ-result.na { color: var(--muted); background: var(--done); }
+  .succ-basis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .succ-basis-grid .succ-result { margin-top: 0; }
+  .succ-basis-title { font-weight: 700; font-size: 12.5px; margin-bottom: 4px; }
+  .succ-basis-sub { font-weight: 400; font-size: 11.5px; opacity: .85; }
+  .succ-verdict { font-weight: 700; margin-bottom: 2px; }
+  .succ-diff { margin-top: 10px; padding: 10px 14px; border-radius: 10px; font-size: 12.5px; line-height: 1.6; background: var(--done); color: var(--ink-2); }
+  .succ-diff.warn { background: #fdf4e7; color: #8a5a12; }
+  .succ-when { margin-top: 12px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+  @media (max-width: 560px) { .succ-basis-grid { grid-template-columns: 1fr; } }
   .succ-check-title { font-size: 12.5px; font-weight: 600; color: var(--ink-2); margin: 20px 0 6px; }
   .succ-check-item {
     display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left;
@@ -2605,39 +2615,69 @@ function succReqListHtml(list, prefix) {
   }).join('');
 }
 
-// 이 판정은 2026 세제개편안의 세세분류 업종표(727개)로 한다. 개편안은 2027.7.1. 이후 상속개시분부터
-// 적용되고, 현행은 한국표준산업분류 대·중분류 기준(시행령 별표)이라 결과가 다를 수 있다.
-const SUCC_BASIS_NOTE = '※ 2027.7.1. 이후 상속개시분부터 적용되는 2026 세제개편안 기준이며, 현행 기준과 다를 수 있습니다.';
+// 업종 판정은 기준이 둘이다. 상속개시일이 2027.7.1. 이전이면 현행(한국표준산업분류 대·중분류, 시행령 별표),
+// 이후면 개정 후(2026 세제개편안 — 세세분류 727개, 법률 별표) 기준이 적용된다 (2026-tax-reform-summary.md §3.2).
+// 한 번 입력하면 두 기준의 결과를 나란히 보여주고, 다르면 그 뜻을 풀어서 알린다.
+const SUCC_WHEN_NOTE = '상속개시일이 2027.7.1. 이전이면 「현행 세법 기준」, 이후면 「세법개정 기준」이 적용됩니다 (2026 세제개편안).';
 
-function succResultHtml() {
-  const code = state.vals.succCode || '';
-  const r = checkSuccessionIndustry(code);
-  if (!r.normalized) {
-    return '<div class="succ-result empty">업종코드를 입력하면 개정 후 기준 적용대상 업종(727개)인지 바로 확인합니다. '
-      + SUCC_BASIS_NOTE + '</div>';
+const SUCC_STATE_LABEL = {
+  ok: '해당', cond: '조건부 해당', no: '비해당', unavailable: '판정 불가', empty: '미확인',
+};
+
+function succBasisBlockHtml(title, sub, r, state) {
+  const head = '<div class="succ-basis-title">' + esc(title) + ' <span class="succ-basis-sub">' + esc(sub) + '</span></div>';
+  if (state === 'unavailable') {
+    return '<div class="succ-result na">' + head
+      + '<div class="succ-verdict">판정 불가</div>현행 기준 업종표(시행령 별표)가 아직 등록되지 않아 판정할 수 없습니다.</div>';
   }
   const approxNote = r.approximate
     ? ' 입력값과 정확히 일치하는 코드가 없어 앞자리가 일치하는 업종을 참고로 표시했습니다 — 사업자등록증의 정확한 업종코드로 다시 확인하세요.'
     : '';
-  if (!r.matched) {
-    return '<div class="succ-result no">입력하신 업종코드 「' + esc(code)
-      + '」는 개정 후 기준(727개) 적용대상 업종 목록에 없습니다. 현행 기준으로는 해당할 수 있으니 '
-      + '코드를 다시 확인하거나 세무 전문가에게 문의하세요.</div>';
+  if (state === 'no') {
+    return '<div class="succ-result no">' + head + '<div class="succ-verdict">비해당</div>'
+      + '목록에 없는 업종코드입니다. 코드를 다시 확인하거나 세무 전문가에게 문의하세요.</div>';
   }
-  if (r.note) {
-    return '<div class="succ-result cond">' + esc(r.categoryName + ' · ' + r.name)
-      + ' — 개정 후 기준 적용대상 업종이지만 조건이 있습니다: ' + esc(r.note) + esc(approxNote) + '</div>';
+  const where = esc(r.categoryName + ' · ' + r.name);
+  if (state === 'cond') {
+    return '<div class="succ-result cond">' + head + '<div class="succ-verdict">조건부 해당</div>'
+      + where + ' — 조건이 있습니다: ' + esc(r.note) + esc(approxNote) + '</div>';
   }
-  return '<div class="succ-result ok">' + esc(r.categoryName + ' · ' + r.name)
-    + ' — 개정 후 기준 가업상속공제 적용대상 업종입니다.' + esc(approxNote) + '</div>';
+  return '<div class="succ-result ok">' + head + '<div class="succ-verdict">해당</div>' + where + esc(approxNote) + '</div>';
+}
+
+// 두 기준의 결과가 어떻게 다른지 — 현행 표가 없어 비교할 수 없으면(unknown) 단정하지 않는다.
+function succDiffHtml(cmp) {
+  const msg = {
+    both: ['', '두 기준 모두 적용대상 업종입니다. 조건이 있으면 기준별로 따로 확인하세요.'],
+    removed: ['warn', '현행 기준으로는 해당하지만 개정 후 기준으로는 제외됩니다. 상속개시일이 2027.7.1. 이후이면 공제 대상이 아닙니다.'],
+    added: ['', '현행 기준으로는 해당하지 않지만 개정 후 기준으로는 새로 대상이 됩니다. 상속개시일이 2027.7.1. 이후여야 공제를 받을 수 있습니다.'],
+    neither: ['', '두 기준 모두 목록에 없습니다. 코드를 다시 확인하거나 세무 전문가에게 문의하세요.'],
+    unknown: ['warn', '현행 기준 업종표가 없어 두 기준을 비교할 수 없습니다. 위 개정 후 기준 결과만 참고하세요 — 개정 후 기준에서 비해당이어도 현행 기준으로는 해당할 수 있습니다.'],
+  }[cmp.change];
+  return msg ? '<div class="succ-diff' + (msg[0] ? ' ' + msg[0] : '') + '">' + esc(msg[1]) + '</div>' : '';
+}
+
+function succResultHtml() {
+  const code = state.vals.succCode || '';
+  const cmp = compareSuccessionIndustry(code);
+  if (cmp.change === 'empty') {
+    return '<div class="succ-result empty">업종코드를 입력하면 가업상속공제 적용대상 업종인지 현행 세법 기준과 세법개정 기준으로 나누어 확인합니다.</div>'
+      + '<div class="succ-when">' + esc(SUCC_WHEN_NOTE) + '</div>';
+  }
+  return '<div class="succ-basis-grid">'
+    + succBasisBlockHtml('현행 세법 기준', '대·중분류 · ~2027.6.30. 상속', cmp.current, cmp.currentState)
+    + succBasisBlockHtml('세법개정 기준', '세세분류 727개 · 2027.7.1.~ 상속', cmp.reform, cmp.reformState)
+    + '</div>'
+    + succDiffHtml(cmp)
+    + '<div class="succ-when">' + esc(SUCC_WHEN_NOTE) + '</div>';
 }
 
 function succSummaryHtml() {
-  const r = checkSuccessionIndustry(state.vals.succCode || '');
-  const indState = !r.normalized ? '미확인' : (r.matched ? (r.note ? '조건부 해당' : '해당') : '비해당');
+  const cmp = compareSuccessionIndustry(state.vals.succCode || '');
   const decOk = succCheckedCount(SUCCESSION_DECEDENT_REQUIREMENTS, 'succ_dec_') === SUCCESSION_DECEDENT_REQUIREMENTS.length;
   const heirOk = succCheckedCount(SUCCESSION_HEIR_REQUIREMENTS, 'succ_heir_') === SUCCESSION_HEIR_REQUIREMENTS.length;
-  return '가업상속공제 사전요건 — 업종(개정 후 기준) ' + indState
+  return '가업상속공제 사전요건 — 업종 현행 ' + SUCC_STATE_LABEL[cmp.currentState]
+    + ' / 개정 후 ' + SUCC_STATE_LABEL[cmp.reformState]
     + ' · 피상속인 요건 ' + (decOk ? '충족' : '미충족')
     + ' · 상속인 요건 ' + (heirOk ? '충족' : '미충족');
 }

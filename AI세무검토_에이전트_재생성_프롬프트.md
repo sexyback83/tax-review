@@ -57,7 +57,7 @@ tax-review/
   succession-industry.js     가업상속공제 적용대상업종 표(727개)·판정 함수·요건 데이터
   fp.js                      FP센터 데이터와 거리·투영 함수 (약 135줄)
   calc.test.js               회귀 테스트 — 구현이 설계대로인지 (131건)
-  succession-industry.test.js 업종표 구조·판정 로직 회귀 테스트 (7건)
+  succession-industry.test.js 업종표 구조·판정 로직 회귀 테스트 (14건)
   audit.test.js              법령 대조 감사 — 설계가 법대로인지 (41건 + 범위제외 1건)
   fp.test.js                 FP센터 단언 253개
   assets/                    로컬 이미지 (로고·캐릭터)
@@ -238,8 +238,14 @@ const ITEMS = [{
 - 사업자등록증 업종코드를 입력하면 `succession-industry.js`의 `checkSuccessionIndustry()`가
   727개 적용대상 업종표(`SUCCESSION_INDUSTRY_CODES`)와 대조해 즉시 결과를 보여준다.
   **이 표는 2026 세제개편안(개정 후, 2027.7.1. 이후 상속개시분) 기준이다** — 현행은 한국표준산업분류
-  대·중분류 기준이라 결과가 다를 수 있다. 그래서 결과 문구마다 「개정 후 기준」을 밝히고, '목록에 없음'이
-  현행 기준 비해당이 아님을 알린다.
+  대·중분류 기준(시행령 별표)이라 결과가 다를 수 있다. 그래서 판정은 **두 기준을 나란히** 보여준다:
+  `compareSuccessionIndustry()` 가 `checkSuccessionIndustry(code, 'current'|'reform')` 를 둘 다 돌려
+  `change`(both·removed·added·neither·unknown)와 기준별 상태(ok·cond·no·unavailable)를 낸다.
+  화면은 업종코드 입력 아래에 「현행 세법 기준」「세법개정 기준」 두 칸과 차이 설명(예: 현행 해당 →
+  개정 후 제외)을 둔다. 상속개시일이 2027.7.1. 이전이면 현행, 이후면 개정 후 기준이 적용된다.
+  **현행 표(`SUCCESSION_INDUSTRY_CODES_CURRENT`)가 비어 있으면 현행 판정은 `unavailable`(판정 불가)로
+  내고, `change` 는 `unknown` 이다 — 비해당으로 오판하거나 「개정 후 비해당 = 제외됨」이라 단정하지 않는다.**
+  현행 표는 `[대분류, 코드(2~5자리 접두), 업종명, 비고]` 행이며 가장 긴 접두 일치로 판정한다.
   정확히 일치하지 않으면 국세청 업종코드(6자리)가 표준산업분류 코드를 앞자리로 포함한다고 보고
   가장 긴 접두 일치를 참고로 보여주며(`approximate: true`), 그 사실을 화면에 함께 고지한다.
 - 피상속인 요건 3개·상속인 요건 4개(`SUCCESSION_DECEDENT_REQUIREMENTS`·`SUCCESSION_HEIR_REQUIREMENTS`,
@@ -402,7 +408,7 @@ const FP_SOURCE = { 심의번호: '25-3281', 담당: 'WM팀',
 ### 통과 기준
 ```
 node calc.test.js               → PASS 147 / FAIL 0
-node succession-industry.test.js→ PASS 7 / FAIL 0
+node succession-industry.test.js→ PASS 14 / FAIL 0
 node fp.test.js                 → 253개 단언 통과
 node audit.test.js              → 통과 48건 / 범위 제외 1건 / 결함 0건
 node oracle/calc.test.js        → 26건 PASS
@@ -526,6 +532,8 @@ taxBase 10억 1,429만원 / finalTax 2억 3,834만원 / 금융재산공제 2억
 > 사업자등록증에는 표준산업분류(4~5자리)가 아니라 국세청 업종코드(6자리)가 적히는 경우가
 > 많아, 정확히 일치하지 않으면 가장 긴 접두 일치를 참고로 보여준다. 정확한 판정은 별표 원문
 > 코드(표준산업분류)로 재확인해야 한다는 점을 화면에 함께 고지한다.
+> 위 V11 값은 **개정 후 기준**이다. 현행 기준 값은 현행 표가 채워진 뒤에 따로 만든다
+> (지금은 `checkSuccessionIndustry('62010', 'current').unavailable === true`).
 
 **FP센터** — 강남역(37.4979, 127.0276) 기준 가까운 순
 ```
@@ -557,6 +565,9 @@ taxBase 10억 1,429만원 / finalTax 2억 3,834만원 / 금융재산공제 2억
 11. **양도세 공동명의에서 12억을 지분으로 판정** — 20억 주택을 절반씩 가졌다고 각자 10억으로
    보아 비과세 처리하면 세액이 통째로 사라진다. 고가주택 판정은 **주택 전체 양도가액** 기준이다.
    지분은 양도차익에만 곱한다 — 안분비율을 구한 뒤가 아니라 **구하기 전** 양도가액이 판정 기준이다.
+12. **가업상속공제 업종표를 현행 기준으로 오인** — 727개 표는 2026 개편안(세세분류, 2027.7.1.~)이다.
+   현행은 대·중분류 기준이라 병원·창고업처럼 개편안에서 새로 빠지는 업종은 현행으로 해당할 수 있다.
+   표에 없다고 「비해당」이라 하면 안 되고, 두 기준을 구분해 보여줘야 한다.
 
 ---
 

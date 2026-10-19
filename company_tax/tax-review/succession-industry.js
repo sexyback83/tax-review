@@ -792,6 +792,24 @@ const SUCCESSION_INDUSTRY_CODES = [
   ['S', '95220', '모터사이클 수리업'],
 ];
 
+// ── 판정 기준 ──
+// 상속개시일이 2027.7.1. 이전이면 현행, 이후면 개정 후(2026 세제개편안) 업종 기준이 적용된다.
+const SUCCESSION_BASIS_CURRENT = 'current';
+const SUCCESSION_BASIS_REFORM = 'reform';
+
+// 현행 업종표 — 상증법 시행령 제15조 [별표]「가업상속공제를 적용받는 중소·중견기업의 해당 업종」.
+// ⚠ 아직 비어 있다. 현행 별표 원문이 저장소에 없고 법령 사이트도 이 환경에서 열리지 않아, 기억이나
+// 검색 요약으로 채우면 FC가 틀린 판정을 받을 수 있기 때문이다. 비어 있는 동안 현행 기준 판정은
+// 「판정 불가」로 나오고 개정 후 기준 판정만 유효하다. 별표 원문을 받으면 아래 형식으로 채운다.
+//
+//   [대분류 문자, 업종코드, 업종명, 비고(조건·제외사유, 없으면 생략)]
+//
+// 개정 후 표(세세분류 5자리)와 달리 현행 별표는 중분류(2자리) 단위로 열거하는 행이 많으므로
+// 코드는 2~5자리 접두로 쓴다. 입력 코드가 그 접두로 시작하면 해당한다(가장 긴 접두 우선).
+// 같은 중분류 안에서 일부만 빠지는 업종(예: 음식점업 중 커피전문점)은 제외 목록을 따로 두지 않고
+// 포함되는 세부 코드만 행으로 적는다. 대분류 문자는 SUCCESSION_INDUSTRY_CATEGORIES 에 있어야 한다.
+const SUCCESSION_INDUSTRY_CODES_CURRENT = [];
+
 // 사업자등록증에는 표준산업분류(4~5자리)가 아니라 국세청 업종코드(6자리)가 적히는 경우가
 // 많고, 그 코드는 대개 표준산업분류 코드를 앞자리로 그대로 포함한다. 숫자만 남긴 입력이
 // 정확히 일치하지 않으면 그 다음으로 가장 긴 접두 일치를 참고용으로 보여준다.
@@ -799,37 +817,74 @@ function normalizeIndustryCode(code) {
   return String(code === null || code === undefined ? '' : code).replace(/[^0-9]/g, '');
 }
 
-function checkSuccessionIndustry(inputCode) {
+function emptyIndustryResult(normalized, basis, unavailable) {
+  return {
+    normalized, basis, matched: false, approximate: false, unavailable: !!unavailable,
+    category: '', categoryName: '', name: '', note: '',
+  };
+}
+
+// inputCode 를 기준(basis)의 업종표와 대조한다. 기본은 개정 후 — 기존 호출은 결과가 바뀌지 않는다.
+//   개정 후  정확히 일치하는 행이 없으면 입력 코드를 앞자리로 가진 가장 긴 행을 참고 판정(approximate)한다.
+//   현행    중분류 등 짧은 접두 행이 범주 전체를 뜻하므로 가장 긴 접두 일치를 정식 판정으로 본다.
+//           다만 입력이 6자리 국세청 업종코드면 앞 5자리(표준산업분류)로 대조했다는 뜻에서 approximate.
+// tables 는 시험용 주입 — { current: [...], reform: [...] }. 쓰지 않으면 이 파일의 표를 쓴다.
+function checkSuccessionIndustry(inputCode, basis, tables) {
+  const useBasis = basis === SUCCESSION_BASIS_CURRENT ? SUCCESSION_BASIS_CURRENT : SUCCESSION_BASIS_REFORM;
+  const isCurrent = useBasis === SUCCESSION_BASIS_CURRENT;
   const normalized = normalizeIndustryCode(inputCode);
-  if (!normalized) {
-    return {
-      normalized: '', matched: false, approximate: false,
-      category: '', categoryName: '', name: '', note: '',
-    };
-  }
-  let entry = SUCCESSION_INDUSTRY_CODES.find((row) => row[1] === normalized);
+  const rows = isCurrent
+    ? ((tables && tables.current) || SUCCESSION_INDUSTRY_CODES_CURRENT)
+    : ((tables && tables.reform) || SUCCESSION_INDUSTRY_CODES);
+  if (!normalized) return emptyIndustryResult('', useBasis, false);
+  if (rows.length === 0) return emptyIndustryResult(normalized, useBasis, true);
+
+  let entry = rows.find((row) => row[1] === normalized);
   let approximate = false;
   if (!entry) {
-    const prefixMatches = SUCCESSION_INDUSTRY_CODES
+    const prefixMatches = rows
       .filter((row) => normalized.indexOf(row[1]) === 0)
       .sort((a, b) => b[1].length - a[1].length);
     if (prefixMatches.length > 0) {
       entry = prefixMatches[0];
-      approximate = true;
+      approximate = !isCurrent;
     }
   }
-  if (!entry) {
-    return {
-      normalized, matched: false, approximate: false,
-      category: '', categoryName: '', name: '', note: '',
-    };
-  }
+  if (!entry) return emptyIndustryResult(normalized, useBasis, false);
+  if (isCurrent) approximate = normalized.length > 5;
+
   const [category, code, name, note] = entry;
   return {
-    normalized, matched: true, approximate,
+    normalized, basis: useBasis, matched: true, approximate, unavailable: false,
     matchedCode: code,
     category, categoryName: SUCCESSION_INDUSTRY_CATEGORIES[category] || '',
     name, note: note || '',
+  };
+}
+
+// 한 번의 입력으로 두 기준의 결과를 함께 낸다. 화면이 현행/개정 후를 나란히 보여준다.
+//   state  empty(미입력) · unavailable(현행 표 없음) · ok(해당) · cond(조건부 해당) · no(비해당)
+//   change both(두 기준 모두 해당) · removed(현행 해당 → 개정 후 제외) · added(현행 비해당 → 개정 후 신규)
+//          neither(두 기준 모두 비해당) · unknown(현행 표가 없어 비교 불가) · empty(미입력)
+function industryState(r) {
+  if (!r.normalized) return 'empty';
+  if (r.unavailable) return 'unavailable';
+  return r.matched ? (r.note ? 'cond' : 'ok') : 'no';
+}
+
+function compareSuccessionIndustry(inputCode, tables) {
+  const current = checkSuccessionIndustry(inputCode, SUCCESSION_BASIS_CURRENT, tables);
+  const reform = checkSuccessionIndustry(inputCode, SUCCESSION_BASIS_REFORM, tables);
+  let change = 'unknown';
+  if (!current.normalized) change = 'empty';
+  else if (!current.unavailable) {
+    change = current.matched && reform.matched ? 'both'
+      : current.matched ? 'removed'
+        : reform.matched ? 'added' : 'neither';
+  }
+  return {
+    current, reform, change,
+    currentState: industryState(current), reformState: industryState(reform),
   };
 }
 
@@ -869,9 +924,14 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     SUCCESSION_INDUSTRY_CATEGORIES,
     SUCCESSION_INDUSTRY_CODES,
+    SUCCESSION_INDUSTRY_CODES_CURRENT,
+    SUCCESSION_BASIS_CURRENT,
+    SUCCESSION_BASIS_REFORM,
     SUCCESSION_DECEDENT_REQUIREMENTS,
     SUCCESSION_HEIR_REQUIREMENTS,
     normalizeIndustryCode,
     checkSuccessionIndustry,
+    compareSuccessionIndustry,
+    industryState,
   };
 }
