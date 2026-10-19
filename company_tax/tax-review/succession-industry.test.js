@@ -14,7 +14,11 @@ const {
   SUCCESSION_INDUSTRY_CODES,
   SUCCESSION_DECEDENT_REQUIREMENTS,
   SUCCESSION_HEIR_REQUIREMENTS,
+  SUCCESSION_INDUSTRY_CODES_CURRENT,
+  SUCCESSION_BASIS_CURRENT,
+  SUCCESSION_BASIS_REFORM,
   checkSuccessionIndustry,
+  compareSuccessionIndustry,
 } = require('./succession-industry.js');
 
 let failed = false;
@@ -78,6 +82,93 @@ test('가업상속공제 요건 체크리스트: 피상속인 3항목 · 상속�
   SUCCESSION_DECEDENT_REQUIREMENTS.concat(SUCCESSION_HEIR_REQUIREMENTS).forEach((r) => {
     assert.ok(r.id && r.label && r.basis);
   });
+});
+
+// ══════════ 현행/개정 후 두 기준 판정 ══════════
+// 아래 FIXTURE 는 판정 **로직**을 검증하기 위한 가짜 표다 — 법령 데이터가 아니다.
+// 현행 별표 원문은 아직 SUCCESSION_INDUSTRY_CODES_CURRENT 에 들어 있지 않으므로(비어 있음)
+// 실제 업종 판정의 정오는 이 테스트로 검증할 수 없고, 원문을 넣을 때 따로 대조해야 한다.
+// 입력 코드는 숫자만 남기고 대조하므로 시험용 코드도 숫자여야 한다. 업종명에 「(시험용)」을 붙여
+// 실데이터와 혼동되지 않게 했다.
+const FIXTURE = {
+  current: [
+    ['C', '04', '(시험용) 중분류 전체 해당'],
+    ['I', '09', '(시험용) 중분류 조건부', '(시험용) 조건이 있습니다'],
+    ['I', '0911', '(시험용) 세분류 — 더 긴 접두 우선'],
+  ],
+  reform: [
+    ['C', '04100', '(시험용) 개정 후에도 해당'],
+    ['J', '05000', '(시험용) 개정 후에만 해당'],
+  ],
+};
+
+test('현행 기준: 현행 업종표가 비어 있으면 판정 불가로 낸다(비해당으로 오판하지 않는다)', () => {
+  assert.equal(SUCCESSION_INDUSTRY_CODES_CURRENT.length, 0, '현행 표를 채웠다면 이 테스트와 아래 비교 테스트를 실데이터 기준으로 다시 쓴다');
+  const r = checkSuccessionIndustry('62010', SUCCESSION_BASIS_CURRENT);
+  assert.equal(r.unavailable, true);
+  assert.equal(r.matched, false);
+  assert.equal(r.basis, SUCCESSION_BASIS_CURRENT);
+  // 입력이 없으면 표가 비어 있어도 미입력이다
+  const empty = checkSuccessionIndustry('', SUCCESSION_BASIS_CURRENT);
+  assert.equal(empty.unavailable, false);
+  assert.equal(empty.normalized, '');
+});
+
+test('기준 지정이 없으면 개정 후 기준이다 (기존 호출 호환)', () => {
+  const a = checkSuccessionIndustry('62010');
+  const b = checkSuccessionIndustry('62010', SUCCESSION_BASIS_REFORM);
+  assert.equal(a.basis, SUCCESSION_BASIS_REFORM);
+  assert.deepEqual(a, b);
+  assert.equal(a.matched, true);
+});
+
+test('현행 기준: 중분류 같은 짧은 접두 행이 하위 코드 전체를 포괄한다', () => {
+  const r = checkSuccessionIndustry('04123', SUCCESSION_BASIS_CURRENT, FIXTURE);
+  assert.equal(r.matched, true);
+  assert.equal(r.matchedCode, '04');
+  assert.equal(r.approximate, false, '5자리 이하 입력은 접두 포괄이 정식 판정이다');
+  // 6자리 국세청 업종코드는 앞 5자리로 대조했으므로 참고 판정
+  assert.equal(checkSuccessionIndustry('041230', SUCCESSION_BASIS_CURRENT, FIXTURE).approximate, true);
+});
+
+test('현행 기준: 더 긴 접두 행이 짧은 행보다 우선하고 비고를 가져온다', () => {
+  // '09100' 은 '09' 로만 시작한다('0911' 이 아니다) → 조건부 행
+  assert.equal(checkSuccessionIndustry('09100', SUCCESSION_BASIS_CURRENT, FIXTURE).matchedCode, '09');
+  assert.ok(checkSuccessionIndustry('09100', SUCCESSION_BASIS_CURRENT, FIXTURE).note.indexOf('조건') >= 0);
+  // '09110' 은 '09' 와 '0911' 둘 다로 시작한다 → 더 긴 행이 이기고 비고도 그 행의 것(없음)
+  const longer = checkSuccessionIndustry('09110', SUCCESSION_BASIS_CURRENT, FIXTURE);
+  assert.equal(longer.matchedCode, '0911');
+  assert.equal(longer.note, '');
+});
+
+test('현행 기준: 표에 없는 코드는 비해당이다', () => {
+  const r = checkSuccessionIndustry('88888', SUCCESSION_BASIS_CURRENT, FIXTURE);
+  assert.equal(r.matched, false);
+  assert.equal(r.unavailable, false);
+});
+
+test('두 기준 비교: 변화 유형 — both · removed · added · neither', () => {
+  const cmp = (code) => compareSuccessionIndustry(code, FIXTURE);
+  assert.equal(cmp('04100').change, 'both');      // 현행 해당('04') · 개정 후 해당('04100')
+  assert.equal(cmp('04200').change, 'removed');   // 현행 해당 · 개정 후 목록에 없음 — 2027.7.1. 이후 제외
+  assert.equal(cmp('05000').change, 'added');     // 현행 비해당 · 개정 후 신규
+  assert.equal(cmp('88888').change, 'neither');
+  assert.equal(cmp('').change, 'empty');
+  // 상태 값
+  assert.equal(cmp('04200').currentState, 'ok');
+  assert.equal(cmp('04200').reformState, 'no');
+  assert.equal(cmp('09100').currentState, 'cond');
+});
+
+test('두 기준 비교: 현행 표가 없으면 변화 유형을 단정하지 않는다(unknown) — 개정 후 결과는 유효하다', () => {
+  const r = compareSuccessionIndustry('62010');
+  assert.equal(r.change, 'unknown');
+  assert.equal(r.currentState, 'unavailable');
+  assert.equal(r.reformState, 'ok');
+  // 현행 표를 모르는 채로 「개정 후 비해당 = 제외됨」이라고 말하면 안 된다
+  const no = compareSuccessionIndustry('99999');
+  assert.equal(no.change, 'unknown');
+  assert.equal(no.reformState, 'no');
 });
 
 if (failed) process.exitCode = 1;

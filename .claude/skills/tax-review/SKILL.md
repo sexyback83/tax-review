@@ -47,7 +47,7 @@ node .claude/skills/tax-review/scripts/tax.js fp 37.4979 127.0276
 - **§1 제1~8조** — 계산과 화면의 분리(법정 수치는 `calc.js` 에만), 브라우저 없는 검증,
   기대값은 법령에서 전개, 저장·전송 금지, 단순성
 - **§3 화면 불변조건 9가지** — 헤더 높이, 입력 중 재렌더 금지, 결과 진입 게이트, 부호 허용 칸 등
-- **§9 실제로 틀렸던 것 11가지** — 같은 함정을 다시 밟지 않기 위한 목록
+- **§9 실제로 틀렸던 것 12가지** — 같은 함정을 다시 밟지 않기 위한 목록
 - **§10 완료 조건**
 
 ## 고친 뒤 검증
@@ -57,7 +57,7 @@ node .claude/skills/tax-review/scripts/tax.js fp 37.4979 127.0276
 | 명령 | 통과 기준 |
 |---|---|
 | `node calc.test.js` | PASS 147 / FAIL 0 |
-| `node succession-industry.test.js` | PASS 7 / FAIL 0 |
+| `node succession-industry.test.js` | PASS 14 / FAIL 0 |
 | `node fp.test.js` | 253개 단언 통과 |
 | `node audit.test.js` | 통과 48건 / 범위 제외 1건 / 결함 0건 |
 | `node oracle/calc.test.js` | 26건 PASS |
@@ -85,6 +85,9 @@ node .claude/skills/tax-review/scripts/tax.js selftest
 - **`Number.isFinite` 로 결과를 검증하면 안 된다.** NaN 만 본다.
 - **`exemptRatio` 는 이름과 달리 「과세되는 안분비율」이다** (비과세가 아니면 1).
 - **`fpExpiryStatus` 는 `Date` 가 아니라 `'YYYY-MM-DD'` 문자열을 받는다.** Date 를 넘기면 조용히 NaN 이 된다.
+- **가업상속공제 업종 판정은 현행/개정 후 두 기준이다.** 727개 표는 2026 개편안(2027.7.1.~) 기준이고
+  현행(대·중분류, 시행령 별표) 표는 아직 `SUCCESSION_INDUSTRY_CODES_CURRENT` 에 비어 있다. 비어 있는 동안
+  현행 판정은 「판정 불가」이며, 개정 후 기준 비해당을 「제외됨」이라 단정하면 안 된다.
 - **양도세 공동명의도 인별 과세다.** 지분만큼 양도차익을 나눠 각자 신고하므로 누진세율 구간이
   사람 수만큼 나뉘고 양도소득 기본공제 250만원도 각자 받는다(소득세법 제103조 제1항). 다만
   **1세대1주택 고가주택 12억 판정은 주택 전체 양도가액 기준**이다 — 지분으로 나눠 12억 이하라고
